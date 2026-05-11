@@ -123,10 +123,11 @@ function rebuildStretchers() {
   const maxIn = state.stretchers[0].maxInputChunk();
   state.inputScratch = state.source.channels.map(() => new Float32Array(maxIn));
   state.firstStep = true;
-  // After a rebuild we tell the worklet to drop any queued audio so the new
-  // sound starts cleanly.
-  postToWorklet({ type: 'reset' });
-  state.blocksInFlight = 0;
+  // We DON'T tell the worklet to drop its queue. Already-produced blocks
+  // from the old stretcher play out to completion; new blocks from the
+  // fresh stretcher append behind them. A small phase discontinuity at the
+  // seam is audible but no silence is dropped. The `blocksInFlight` counter
+  // continues to be valid because the worklet keeps acking by blockId.
 }
 
 // ── Production loop ────────────────────────────────────────────────────────
@@ -293,21 +294,28 @@ async function handleMain(msg: MainToWorker) {
     if (msg.type === 'params') {
       const prev = state.config;
       state.config = msg.config;
-      // fft_size and window changes require a full rebuild (they're construction
-      // parameters). The stretch and onset values flow into the next step
-      // naturally, but since the constructor consumed them already we still
-      // need to rebuild to apply the new constructor args. For now: rebuild
-      // on any param change. A future optimisation can crossfade between old
-      // and new stretchers to avoid the click.
       if (state.module && state.source) {
+        // Only fftSize and windowType require constructing a fresh Stretcher
+        // (the FFT plan and window table are tied to them). Stretch and
+        // onset hot-swap into the existing Stretcher with no DSP reset,
+        // so slider drags don't click.
         const needsRebuild =
           !prev ||
+          !state.stretchers.length ||
           prev.fftSize !== msg.config.fftSize ||
-          prev.windowType !== msg.config.windowType ||
-          prev.stretch !== msg.config.stretch ||
-          prev.onsetSensitivity !== msg.config.onsetSensitivity;
-        if (needsRebuild) rebuildStretchers();
-        // kick the pump in case we were paused at high-water
+          prev.windowType !== msg.config.windowType;
+        if (needsRebuild) {
+          rebuildStretchers();
+        } else {
+          for (const s of state.stretchers) {
+            if (prev!.stretch !== msg.config.stretch) {
+              s.setStretchFactor(msg.config.stretch);
+            }
+            if (prev!.onsetSensitivity !== msg.config.onsetSensitivity) {
+              s.setOnsetDetectionSensitivity(msg.config.onsetSensitivity);
+            }
+          }
+        }
         kickPumpSoon();
       }
       return;
@@ -326,11 +334,8 @@ async function handleMain(msg: MainToWorker) {
             s.clearStretchEnvelope();
           }
         }
-        // setStretchEnvelope on the wasm side rebuilds internal state, so
-        // discard any in-flight queued audio.
-        postToWorklet({ type: 'reset' });
-        state.blocksInFlight = 0;
-        state.firstStep = true;
+        // setStretchEnvelope is now a hot pointer swap on the wasm side —
+        // no DSP reset, no need to discard queued audio.
         kickPumpSoon();
       }
       return;
