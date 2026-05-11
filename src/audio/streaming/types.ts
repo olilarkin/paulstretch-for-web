@@ -1,4 +1,5 @@
 import type { Params, WindowType } from '../../types';
+import type { RingHandles } from './ring-buffer';
 
 // ── Worker config (subset of Params, already-resolved) ─────────────────────
 
@@ -27,7 +28,7 @@ export interface SourcePayload {
 // ── Main → Worker messages ─────────────────────────────────────────────────
 
 export type MainToWorker =
-  | { type: 'init'; channelCount: number; sampleRate: number }
+  | { type: 'init'; channelCount: number; sampleRate: number; ring: RingHandles }
   | { type: 'source'; source: SourcePayload }
   | { type: 'params'; config: StretcherConfig }
   | {
@@ -51,25 +52,13 @@ export type WorkerToMain =
   | { type: 'ended' }
   | { type: 'error'; message: string };
 
-// ── Worker → Worklet messages (via MessageChannel) ─────────────────────────
+// ── Worklet ↔ Main control (no audio bulk; that goes through the SAB ring) ─
 
-export interface AudioBlock {
-  // Each entry is one channel of `bufsize` Float32 samples.
-  channels: Float32Array[];
-  // Monotonic block id; used to correlate acks for flow control.
-  blockId: number;
-  // True for the final block of the current source — worklet drains it then
-  // emits silence until a new source arrives or loop wraps.
-  endOfStream: boolean;
-}
+// Main → Worklet: shares the ring handles + bootstrap. Worklet has no
+// outbound channel besides node.port back to main; it doesn't talk to the
+// worker (audio flows lock-free through the shared ring instead).
+export type MainToWorklet =
+  | { type: '__ring'; ring: RingHandles };
 
-export type WorkerToWorklet =
-  | ({ type: 'block' } & AudioBlock)
-  | { type: 'reset' }                  // discard queue (used on seek / param rebuild)
-  | { type: 'silence'; durationFrames?: number }; // soft pause: continue running but drain to silence
-
-// ── Worklet → Worker messages ──────────────────────────────────────────────
-
-export type WorkletToWorker =
-  | { type: 'ack'; blockId: number }    // worklet finished draining this block
+export type WorkletToMain =
   | { type: 'underrun'; framesMissed: number };

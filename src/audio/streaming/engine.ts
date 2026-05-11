@@ -5,9 +5,10 @@ import type {
 } from '../../types';
 import { sliderToFftSize, sliderToStretch } from '../../state/mappings';
 import { densify } from '../../components/EnvelopeEditor/interpolation';
+import { ringCreate, type RingHandles } from './ring-buffer';
 // Vite's `?worker&url` resolves to a URL that points at a JS-transformed,
 // separately-bundled file for the worklet. AudioWorklet.addModule then
-// loads it as a module. The same URL works in both dev and prod.
+// loads it as a module. Same URL in dev and prod.
 import workletUrl from './stream-worklet.ts?worker&url';
 import type { MainToWorker, StretcherConfig, WorkerToMain } from './types';
 
@@ -15,6 +16,13 @@ type PositionListener = (cursor: number, totalFrames: number, running: boolean) 
 type ErrorListener = (message: string) => void;
 type EndedListener = () => void;
 type ReadyListener = (info: { backend: string; simdArch: string; simdSize: number }) => void;
+
+// Ring sizing: 2 seconds of audio at 48 kHz × 2 channels ≈ 768 KB. Big enough
+// to mask any worker stall up to ~1 second; small enough not to feel laggy
+// when the user moves a slider (worker's hot setters land within the next
+// 100 ms; the audible delay is at most the ring's pre-buffered duration).
+const RING_CAPACITY_FRAMES = 96000;
+const RING_CHANNELS = 2;
 
 export class StreamingEngine {
   private readonly ctx: AudioContext;
@@ -55,12 +63,20 @@ export class StreamingEngine {
   }
 
   static async create(ctx: AudioContext): Promise<StreamingEngine> {
+    if (!globalThis.crossOriginIsolated) {
+      throw new Error(
+        'StreamingEngine requires cross-origin isolation (SharedArrayBuffer). ' +
+          'Serve the page with Cross-Origin-Opener-Policy: same-origin and ' +
+          'Cross-Origin-Embedder-Policy: require-corp.',
+      );
+    }
+
     await ctx.audioWorklet.addModule(workletUrl);
 
     const node = new AudioWorkletNode(ctx, 'paulstretch-processor', {
       numberOfInputs: 0,
       numberOfOutputs: 1,
-      outputChannelCount: [2],
+      outputChannelCount: [RING_CHANNELS],
     });
     node.connect(ctx.destination);
 
@@ -69,19 +85,22 @@ export class StreamingEngine {
       { type: 'module' },
     );
 
-    // Direct Worker ↔ Worklet pipe via a MessageChannel. Audio blocks flow
-    // through this without bouncing through the main thread.
-    const channel = new MessageChannel();
-    worker.postMessage({ type: '__connect', port: channel.port1 }, [channel.port1]);
-    node.port.postMessage({ type: '__connect', port: channel.port2 }, [channel.port2]);
+    // Single SAB ring shared between worker (producer) and worklet
+    // (consumer). The handles are plain transferable-as-clone — the SAB
+    // pair lives in shared memory.
+    const { handles } = ringCreate(RING_CHANNELS, RING_CAPACITY_FRAMES);
 
-    const engine = new StreamingEngine(ctx, worker, node);
-    engine.send({
+    // Worker side
+    worker.postMessage({
       type: 'init',
-      channelCount: 2,
+      channelCount: RING_CHANNELS,
       sampleRate: ctx.sampleRate,
-    });
-    return engine;
+      ring: handles,
+    } satisfies MainToWorker);
+    // Worklet side — share the same SABs.
+    node.port.postMessage({ type: '__ring', ring: handles satisfies RingHandles });
+
+    return new StreamingEngine(ctx, worker, node);
   }
 
   private send(msg: MainToWorker, transfer?: Transferable[]): void {
@@ -90,7 +109,6 @@ export class StreamingEngine {
 
   onReady(cb: ReadyListener): () => void {
     this.readyListeners.add(cb);
-    // Late-subscribe: if the worker already reported ready, fire immediately.
     if (this.readyInfo) cb(this.readyInfo);
     return () => this.readyListeners.delete(cb);
   }

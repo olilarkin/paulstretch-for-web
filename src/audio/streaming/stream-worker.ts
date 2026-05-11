@@ -5,23 +5,19 @@ import PaulstretchModule, {
 } from 'paulstretch-wasm';
 import wasmUrl from 'paulstretch-wasm/paulstretch.wasm?url';
 import type {
-  AudioBlock,
   MainToWorker,
   StretcherConfig,
   WorkerToMain,
-  WorkerToWorklet,
-  WorkletToWorker,
 } from './types';
 import type { WindowType } from '../../types';
+import type { RingHandles, RingView } from './ring-buffer';
+import { ringAttach, ringReset, ringWrite, writableFrames } from './ring-buffer';
 
-// Flow control: number of blocks the worker may have in flight (sent but not
-// yet acked by the worklet). At bufsize=4096 @ 48kHz, one block ≈ 85 ms; HIGH=24
-// gives ~2 s of pre-buffered audio, which masks UI jank without burning much
-// memory.
-const HIGH_WATER = 24;
-const LOW_WATER = 12;
-
-// ── Module load ────────────────────────────────────────────────────────────
+// When the ring is full we yield and retry. 20 ms is much shorter than the
+// ring's buffered duration (~1 s by default), so the worklet is never close
+// to underrunning. Tighter polling burns CPU; looser polling risks bursty
+// production with the worker waking up only to find the ring drained.
+const POLL_MS_WHEN_FULL = 20;
 
 let modulePromise: Promise<PSModule> | null = null;
 function getModule(): Promise<PSModule> {
@@ -50,8 +46,6 @@ function mapWindow(M: PSModule, w: WindowType): number {
   }
 }
 
-// ── Engine state ───────────────────────────────────────────────────────────
-
 interface Source {
   channels: Float32Array[];
   totalFrames: number;
@@ -66,31 +60,23 @@ interface EnvelopeState {
 
 const state = {
   module: null as PSModule | null,
-  workletPort: null as MessagePort | null,
+  ring: null as RingView | null,
   source: null as Source | null,
   config: null as StretcherConfig | null,
   envelope: null as EnvelopeState | null,
-  stretchers: [] as StreamingStretcher[],     // one per channel
-  cursor: 0,                                   // current input cursor (frames)
-  firstStep: true,                             // tracks the first-fill state
-  running: false,                              // produce or not
-  loop: true,                                  // restart at EOS by default
-  blocksInFlight: 0,
-  nextBlockId: 0,
-  inputScratch: [] as Float32Array[],          // sized to max_input_chunk
-  pendingResume: false,                        // need to kick the loop after ack
+  stretchers: [] as StreamingStretcher[],
+  cursor: 0,
+  firstStep: true,
+  running: false,
+  loop: true,
+  inputScratch: [] as Float32Array[],
+  pumpTimer: 0 as number | ReturnType<typeof setTimeout>,
   positionTimer: 0 as number | ReturnType<typeof setInterval>,
 };
 
 function post(msg: WorkerToMain, transfer?: Transferable[]): void {
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer ?? []);
 }
-
-function postToWorklet(msg: WorkerToWorklet, transfer?: Transferable[]): void {
-  state.workletPort?.postMessage(msg, transfer ?? []);
-}
-
-// ── Stretcher lifecycle ────────────────────────────────────────────────────
 
 function disposeStretchers() {
   for (const s of state.stretchers) {
@@ -123,37 +109,32 @@ function rebuildStretchers() {
   const maxIn = state.stretchers[0].maxInputChunk();
   state.inputScratch = state.source.channels.map(() => new Float32Array(maxIn));
   state.firstStep = true;
-  // We DON'T tell the worklet to drop its queue. Already-produced blocks
-  // from the old stretcher play out to completion; new blocks from the
-  // fresh stretcher append behind them. A small phase discontinuity at the
-  // seam is audible but no silence is dropped. The `blocksInFlight` counter
-  // continues to be valid because the worklet keeps acking by blockId.
+  // Don't reset the ring on rebuild — already-produced samples play out and
+  // the new stretcher's first fill appends behind them. A small phase
+  // discontinuity at the seam is audible but no silence drops.
 }
 
-// ── Production loop ────────────────────────────────────────────────────────
-
-function produceOneBlock(): boolean {
-  if (!state.source || !state.stretchers.length) return false;
-  const channels = state.source.channels;
+// Produce one block (= bufsize frames per channel) and write into the ring.
+// Returns false if the ring is full (caller should yield) or if EOS was
+// reached without looping.
+function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' | 'done' {
+  if (!state.source || !state.stretchers.length || !state.ring) return 'done';
   const totalFrames = state.source.totalFrames;
+  const channels = state.source.channels;
+
+  // Need bufsize frames of headroom in the ring before producing — otherwise
+  // we'd block in mid-step and overwrite the start of our just-produced
+  // block.
+  const bufsize = state.stretchers[0].bufsize();
+  if (writableFrames(state.ring) < bufsize) return 'ringFull';
 
   const want = state.firstStep
     ? state.stretchers[0].maxInputChunk()
     : state.stretchers[0].nextInputSize();
 
-  // Termination: same heuristic as the offline renderer. After the first
-  // step, if we've consumed past the end and the stretcher still wants input,
-  // we've reached the EOS tail.
   if (want > 0 && state.cursor >= totalFrames && !state.firstStep) {
     if (state.loop) {
-      // Reset the stretcher's DSP state and rewind input. Do NOT clear the
-      // worklet queue — already-queued audio plays through, then the loop's
-      // new initial fill follows seamlessly. Blocks in flight stay counted
-      // because they will be acked normally when drained.
       for (const s of state.stretchers) s.reset();
-      // Re-apply envelope after reset (StreamingStretcher.reset preserves it,
-      // but setStretchEnvelope's wasm-side rebuild does not survive reset()
-      // anymore — actually it does, so this is belt-and-braces).
       if (state.envelope?.enabled && state.envelope.positions.length > 0) {
         for (const s of state.stretchers) {
           s.setStretchEnvelope(state.envelope.positions, state.envelope.values);
@@ -161,21 +142,13 @@ function produceOneBlock(): boolean {
       }
       state.cursor = 0;
       state.firstStep = true;
-      return true; // produce next block on the rewound source
+      return 'wrote'; // try again on rewound source
     }
-    // EOS, no loop. Emit a final empty block as a sentinel.
-    const empty: AudioBlock = {
-      channels: channels.map(() => new Float32Array(state.stretchers[0].bufsize())),
-      blockId: state.nextBlockId++,
-      endOfStream: true,
-    };
-    postToWorklet({ type: 'block', ...empty }, empty.channels.map((c) => c.buffer));
     state.running = false;
     post({ type: 'ended' });
-    return false;
+    return 'done';
   }
 
-  // Gather input frames per channel, zero-padding past EOF.
   for (let c = 0; c < channels.length; c++) {
     if (want > 0) {
       const remain = totalFrames - state.cursor;
@@ -185,50 +158,43 @@ function produceOneBlock(): boolean {
           channels[c].subarray(state.cursor, state.cursor + take),
         );
       }
-      if (take < want) {
-        state.inputScratch[c].fill(0, take, want);
-      }
+      if (take < want) state.inputScratch[c].fill(0, take, want);
     }
   }
 
   const positionPct = (100.0 * state.cursor) / totalFrames;
-  const outputChannels: Float32Array[] = [];
   for (let c = 0; c < channels.length; c++) {
     const result = state.stretchers[c].step(
       want > 0 ? state.inputScratch[c].subarray(0, want) : null,
       positionPct,
     );
-    outputChannels.push(result.output);
+    // Step's wasm-returned Float32Array is freshly allocated each call.
+    stretchOutputs[c] = result.output;
   }
 
-  if (want > 0) {
-    state.cursor = Math.min(state.cursor + want, totalFrames);
-  }
+  if (want > 0) state.cursor = Math.min(state.cursor + want, totalFrames);
   const skip = state.stretchers[0].skipAfterStep();
   if (skip > 0) state.cursor = Math.min(state.cursor + skip, totalFrames);
 
   state.firstStep = false;
 
-  const block: AudioBlock = {
-    channels: outputChannels,
-    blockId: state.nextBlockId++,
-    endOfStream: false,
-  };
-  postToWorklet(
-    { type: 'block', ...block },
-    outputChannels.map((c) => c.buffer),
-  );
-  state.blocksInFlight++;
-  return true;
+  ringWrite(state.ring, stretchOutputs, bufsize);
+  return 'wrote';
 }
 
 function pumpLoop() {
   if (!state.running) return;
   try {
-    while (state.running && state.blocksInFlight < HIGH_WATER) {
-      if (!produceOneBlock()) return;
+    const tmp: Float32Array[] = [];
+    while (state.running) {
+      const result = produceOneBlock(tmp);
+      if (result === 'ringFull') {
+        // Try again after the worklet has drained some samples.
+        state.pumpTimer = setTimeout(pumpLoop, POLL_MS_WHEN_FULL);
+        return;
+      }
+      if (result === 'done') return;
     }
-    state.pendingResume = true;
   } catch (err) {
     console.error(
       '[paulstretch worker] production threw:',
@@ -239,11 +205,12 @@ function pumpLoop() {
 }
 
 function kickPumpSoon() {
-  // Yield to the event loop so we don't block postMessage processing.
-  setTimeout(() => pumpLoop(), 0);
+  if (state.pumpTimer) {
+    clearTimeout(state.pumpTimer as ReturnType<typeof setTimeout>);
+    state.pumpTimer = 0;
+  }
+  state.pumpTimer = setTimeout(pumpLoop, 0);
 }
-
-// ── Position reporter ──────────────────────────────────────────────────────
 
 function startPositionReports() {
   stopPositionReports();
@@ -265,11 +232,10 @@ function stopPositionReports() {
   }
 }
 
-// ── Message handling ───────────────────────────────────────────────────────
-
 async function handleMain(msg: MainToWorker) {
   try {
     if (msg.type === 'init') {
+      state.ring = ringAttach(msg.ring as RingHandles);
       const M = await getModule();
       state.module = M;
       post({
@@ -289,16 +255,13 @@ async function handleMain(msg: MainToWorker) {
       state.cursor = 0;
       state.firstStep = true;
       if (state.config) rebuildStretchers();
+      if (state.ring) ringReset(state.ring);
       return;
     }
     if (msg.type === 'params') {
       const prev = state.config;
       state.config = msg.config;
       if (state.module && state.source) {
-        // Only fftSize and windowType require constructing a fresh Stretcher
-        // (the FFT plan and window table are tied to them). Stretch and
-        // onset hot-swap into the existing Stretcher with no DSP reset,
-        // so slider drags don't click.
         const needsRebuild =
           !prev ||
           !state.stretchers.length ||
@@ -334,8 +297,6 @@ async function handleMain(msg: MainToWorker) {
             s.clearStretchEnvelope();
           }
         }
-        // setStretchEnvelope is now a hot pointer swap on the wasm side —
-        // no DSP reset, no need to discard queued audio.
         kickPumpSoon();
       }
       return;
@@ -356,8 +317,7 @@ async function handleMain(msg: MainToWorker) {
       state.cursor = 0;
       state.firstStep = true;
       for (const s of state.stretchers) s.reset();
-      postToWorklet({ type: 'reset' });
-      state.blocksInFlight = 0;
+      if (state.ring) ringReset(state.ring);
       return;
     }
     if (msg.type === 'seek') {
@@ -366,14 +326,12 @@ async function handleMain(msg: MainToWorker) {
       state.cursor = Math.floor(frac * state.source.totalFrames);
       state.firstStep = true;
       for (const s of state.stretchers) s.reset();
-      // Re-apply envelope after reset.
       if (state.envelope?.enabled && state.envelope.positions.length > 0) {
         for (const s of state.stretchers) {
           s.setStretchEnvelope(state.envelope.positions, state.envelope.values);
         }
       }
-      postToWorklet({ type: 'reset' });
-      state.blocksInFlight = 0;
+      if (state.ring) ringReset(state.ring);
       if (state.running) kickPumpSoon();
       return;
     }
@@ -384,8 +342,6 @@ async function handleMain(msg: MainToWorker) {
     if (msg.type === 'shutdown') {
       stopPositionReports();
       disposeStretchers();
-      state.workletPort?.close();
-      state.workletPort = null;
       state.running = false;
       return;
     }
@@ -397,26 +353,6 @@ async function handleMain(msg: MainToWorker) {
   }
 }
 
-function handleWorklet(msg: WorkletToWorker) {
-  if (msg.type === 'ack') {
-    state.blocksInFlight = Math.max(0, state.blocksInFlight - 1);
-    if (state.pendingResume && state.blocksInFlight <= LOW_WATER) {
-      state.pendingResume = false;
-      kickPumpSoon();
-    }
-  } else if (msg.type === 'underrun') {
-    // Surfaced as diagnostic only; flow control already handles back-pressure.
-    void msg.framesMissed;
-  }
-}
-
-self.onmessage = (e: MessageEvent) => {
-  const data = e.data as MainToWorker | { type: '__connect'; port: MessagePort };
-  if ((data as { type: string }).type === '__connect') {
-    const portMsg = data as { type: '__connect'; port: MessagePort };
-    state.workletPort = portMsg.port;
-    state.workletPort.onmessage = (ev) => handleWorklet(ev.data as WorkletToWorker);
-    return;
-  }
-  void handleMain(data as MainToWorker);
+self.onmessage = (e: MessageEvent<MainToWorker>) => {
+  void handleMain(e.data);
 };
