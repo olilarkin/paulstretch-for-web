@@ -1,10 +1,12 @@
 import type {
   AudioSource,
+  BinauralParams,
   Envelope,
   Params,
+  ProcessParams,
 } from '../../types';
 import { sliderToStreamingFftSize, sliderToStretch } from '../../state/mappings';
-import { densify } from '../../components/EnvelopeEditor/interpolation';
+import { densifyLogValuesWithBreakpoints } from '../../components/EnvelopeEditor/interpolation';
 import { ringCreate, type RingHandles } from './ring-buffer';
 // Vite's `?worker&url` resolves to a URL that points at a JS-transformed,
 // separately-bundled file for the worklet. AudioWorklet.addModule then
@@ -154,9 +156,55 @@ export class StreamingEngine {
     this.send({ type: 'params', config });
   }
 
+  setProcessParams(processParams: ProcessParams): void {
+    const { arbitraryFilter, ...options } = processParams;
+    const curve = arbitraryFilter.enabled
+      ? densifyLogValuesWithBreakpoints(arbitraryFilter, 512)
+      : {
+          positions: new Float32Array(0),
+          values: new Float32Array(0),
+        };
+
+    this.send(
+      {
+        type: 'process',
+        config: {
+          options: {
+            ...options,
+            arbitraryFilterEnabled: arbitraryFilter.enabled,
+          },
+          arbitraryFilter: {
+            enabled: arbitraryFilter.enabled,
+            positions: curve.positions,
+            values: curve.values,
+          },
+        },
+      },
+      [curve.positions.buffer, curve.values.buffer],
+    );
+  }
+
+  setBinauralParams(binauralParams: BinauralParams): void {
+    const { frequencyEnvelope, ...options } = binauralParams;
+    const curve = densifyLogValuesWithBreakpoints(frequencyEnvelope, 256);
+    this.send(
+      {
+        type: 'binaural',
+        config: {
+          options,
+          frequencyEnvelope: {
+            positions: curve.positions,
+            values: curve.values,
+          },
+        },
+      },
+      [curve.positions.buffer, curve.values.buffer],
+    );
+  }
+
   setEnvelope(envelope: Envelope): void {
     if (envelope.enabled) {
-      const { positions, values } = densify(envelope, 256);
+      const { positions, values } = densifyLogValuesWithBreakpoints(envelope, 256);
       this.send(
         { type: 'envelope', enabled: true, positions, values },
         [positions.buffer, values.buffer],

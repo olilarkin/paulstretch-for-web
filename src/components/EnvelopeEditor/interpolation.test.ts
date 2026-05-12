@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { densify } from './interpolation';
+import { densify, densifyLogValues, densifyLogValuesWithBreakpoints } from './interpolation';
 import type { Envelope } from '../../types';
 
 const baseEnv = (overrides: Partial<Envelope> = {}): Envelope => ({
@@ -40,6 +40,32 @@ describe('densify', () => {
     const { positions, values } = densify(env, 11); // step 0.1
     expect(positions[5]).toBeCloseTo(0.5);
     expect(values[5]).toBeCloseTo(2, 5);
+  });
+
+  it('log-value interpolation hits the geometric mid-value at mid-position', () => {
+    const env = baseEnv({
+      points: [
+        { position: 0, value: 0.001, enabled: true },
+        { position: 1, value: 10, enabled: true },
+      ],
+    });
+    const { positions, values } = densifyLogValues(env, 3);
+    expect(positions[1]).toBeCloseTo(0.5);
+    expect(values[1]).toBeCloseTo(0.1, 5);
+  });
+
+  it('log-value interpolation can include exact breakpoint positions', () => {
+    const env = baseEnv({
+      points: [
+        { position: 0, value: 1, enabled: true },
+        { position: 0.333, value: 8, enabled: true },
+        { position: 1, value: 2, enabled: true },
+      ],
+    });
+    const { positions, values } = densifyLogValuesWithBreakpoints(env, 5);
+    const idx = Array.from(positions).findIndex((x) => Math.abs(x - 0.333) < 1e-7);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(values[idx]).toBeCloseTo(8, 5);
   });
 
   it('cosine interpolation produces smooth curve through endpoints', () => {

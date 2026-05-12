@@ -1,15 +1,18 @@
 /// <reference lib="webworker" />
 import PaulstretchModule, {
+  type BinauralBeatsProcessor,
   type PaulstretchModule as PSModule,
   type StreamingStretcher,
 } from 'paulstretch-wasm';
 import wasmUrl from 'paulstretch-wasm/paulstretch.wasm?url';
 import type {
+  BinauralConfig,
   MainToWorker,
+  ProcessConfig,
   StretcherConfig,
   WorkerToMain,
 } from './types';
-import type { WindowType } from '../../types';
+import type { BinauralStereoMode, WindowType } from '../../types';
 import type { RingHandles, RingView } from './ring-buffer';
 import { ringAttach, ringReset, ringWrite } from './ring-buffer';
 
@@ -46,6 +49,19 @@ function mapWindow(M: PSModule, w: WindowType): number {
   }
 }
 
+function mapBinauralMode(M: PSModule, mode: BinauralStereoMode): number {
+  switch (mode) {
+    case 'LeftRight':
+      return M.BinauralStereoMode.LeftRight;
+    case 'RightLeft':
+      return M.BinauralStereoMode.RightLeft;
+    case 'Symmetric':
+      return M.BinauralStereoMode.Symmetric;
+    default:
+      return M.BinauralStereoMode.LeftRight;
+  }
+}
+
 interface Source {
   channels: Float32Array[];
   totalFrames: number;
@@ -63,6 +79,10 @@ const state = {
   ring: null as RingView | null,
   source: null as Source | null,
   config: null as StretcherConfig | null,
+  processConfig: null as ProcessConfig | null,
+  binauralConfig: null as BinauralConfig | null,
+  binauralProcessor: null as BinauralBeatsProcessor | null,
+  outputSampleRate: 44100,
   envelope: null as EnvelopeState | null,
   stretchers: [] as StreamingStretcher[],
   cursor: 0,
@@ -87,6 +107,49 @@ function disposeStretchers() {
   state.stretchers = [];
 }
 
+function disposeBinauralProcessor() {
+  try { state.binauralProcessor?.delete(); } catch { /* ignore */ }
+  state.binauralProcessor = null;
+}
+
+function applyProcessConfig(s: StreamingStretcher) {
+  const cfg = state.processConfig;
+  if (!cfg) return;
+  s.setProcessOptions(cfg.options);
+  if (cfg.arbitraryFilter.enabled && cfg.arbitraryFilter.positions.length > 0) {
+    s.setArbitraryFilter(cfg.arbitraryFilter.positions, cfg.arbitraryFilter.values);
+  } else {
+    s.clearArbitraryFilter();
+  }
+}
+
+function applyBinauralConfig() {
+  if (!state.module || !state.binauralProcessor || !state.binauralConfig) return;
+  const options = state.binauralConfig.options;
+  state.binauralProcessor.setOptions({
+    enabled: options.enabled,
+    stereoMode: mapBinauralMode(state.module, options.stereoMode),
+    mono: options.mono,
+    beatFrequencyHz: options.beatFrequencyHz,
+  });
+  if (state.binauralConfig.frequencyEnvelope.positions.length > 0) {
+    state.binauralProcessor.setFrequencyEnvelope(
+      state.binauralConfig.frequencyEnvelope.positions,
+      state.binauralConfig.frequencyEnvelope.values,
+    );
+  } else {
+    state.binauralProcessor.clearFrequencyEnvelope();
+  }
+}
+
+function ensureBinauralProcessor() {
+  if (!state.module) return;
+  if (!state.binauralProcessor) {
+    state.binauralProcessor = new state.module.BinauralBeatsProcessor(state.outputSampleRate);
+  }
+  applyBinauralConfig();
+}
+
 function rebuildStretchers() {
   if (!state.module || !state.source || !state.config) return;
   disposeStretchers();
@@ -108,12 +171,23 @@ function rebuildStretchers() {
       s.setStretchEnvelope(state.envelope.positions, state.envelope.values);
     }
   }
+  for (const s of state.stretchers) applyProcessConfig(s);
   const maxIn = state.stretchers[0].maxInputChunk();
   state.inputScratch = state.source.channels.map(() => new Float32Array(maxIn));
   state.firstStep = true;
   // Don't reset the ring on rebuild — already-produced samples play out and
   // the new stretcher's first fill appends behind them. A small phase
   // discontinuity at the seam is audible but no silence drops.
+}
+
+function processBinaural(outputs: Float32Array[], positionPct: number): Float32Array[] {
+  if (!state.binauralConfig?.options.enabled || !state.binauralProcessor || outputs.length === 0) {
+    return outputs;
+  }
+  const left = outputs[0];
+  const right = outputs.length > 1 ? outputs[1] : new Float32Array(left);
+  const result = state.binauralProcessor.process(left, right, positionPct);
+  return [result.left, result.right];
 }
 
 function clearPendingOutput() {
@@ -159,6 +233,7 @@ function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' |
   if (want > 0 && state.cursor >= totalFrames && !state.firstStep) {
     if (state.loop) {
       for (const s of state.stretchers) s.reset();
+      state.binauralProcessor?.reset();
       if (state.envelope?.enabled && state.envelope.positions.length > 0) {
         for (const s of state.stretchers) {
           s.setStretchEnvelope(state.envelope.positions, state.envelope.values);
@@ -208,7 +283,7 @@ function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' |
 
   state.firstStep = false;
 
-  state.pendingOutputs = stretchOutputs.slice();
+  state.pendingOutputs = processBinaural(stretchOutputs, positionPct).slice();
   state.pendingOffset = 0;
   return flushPendingOutput() ? 'wrote' : 'ringFull';
 }
@@ -267,8 +342,10 @@ async function handleMain(msg: MainToWorker) {
   try {
     if (msg.type === 'init') {
       state.ring = ringAttach(msg.ring as RingHandles);
+      state.outputSampleRate = msg.sampleRate;
       const M = await getModule();
       state.module = M;
+      ensureBinauralProcessor();
       post({
         type: 'ready',
         backend: M.fftBackendName(),
@@ -287,6 +364,7 @@ async function handleMain(msg: MainToWorker) {
       state.firstStep = true;
       clearPendingOutput();
       if (state.config) rebuildStretchers();
+      state.binauralProcessor?.reset();
       if (state.ring) ringReset(state.ring);
       return;
     }
@@ -313,6 +391,19 @@ async function handleMain(msg: MainToWorker) {
         }
         kickPumpSoon();
       }
+      return;
+    }
+    if (msg.type === 'process') {
+      state.processConfig = msg.config;
+      for (const s of state.stretchers) applyProcessConfig(s);
+      kickPumpSoon();
+      return;
+    }
+    if (msg.type === 'binaural') {
+      state.binauralConfig = msg.config;
+      ensureBinauralProcessor();
+      applyBinauralConfig();
+      kickPumpSoon();
       return;
     }
     if (msg.type === 'envelope') {
@@ -350,6 +441,7 @@ async function handleMain(msg: MainToWorker) {
       state.firstStep = true;
       clearPendingOutput();
       for (const s of state.stretchers) s.reset();
+      state.binauralProcessor?.reset();
       if (state.ring) ringReset(state.ring);
       return;
     }
@@ -360,6 +452,7 @@ async function handleMain(msg: MainToWorker) {
       state.firstStep = true;
       clearPendingOutput();
       for (const s of state.stretchers) s.reset();
+      state.binauralProcessor?.reset();
       if (state.envelope?.enabled && state.envelope.positions.length > 0) {
         for (const s of state.stretchers) {
           s.setStretchEnvelope(state.envelope.positions, state.envelope.values);
@@ -376,6 +469,7 @@ async function handleMain(msg: MainToWorker) {
     if (msg.type === 'shutdown') {
       stopPositionReports();
       disposeStretchers();
+      disposeBinauralProcessor();
       state.running = false;
       clearPendingOutput();
       return;

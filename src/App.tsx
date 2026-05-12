@@ -4,6 +4,8 @@ import { TitleBar } from './components/TitleBar';
 import { FileInfoBar } from './components/FileInfoBar';
 import { Tabs } from './components/Tabs';
 import { ParametersPanel } from './components/ParametersPanel';
+import { ProcessPanel } from './components/ProcessPanel';
+import { BinauralPanel } from './components/BinauralPanel';
 import { TransportBar } from './components/TransportBar';
 import { StreamingEngine } from './audio/streaming/engine';
 import { syncEngineFromStore } from './audio/streaming/sync';
@@ -81,7 +83,10 @@ async function getEngine(sampleRate?: number): Promise<StreamingEngine> {
 export function App() {
   const source = useStore((s) => s.source);
   const params = useStore((s) => s.params);
+  const processParams = useStore((s) => s.processParams);
+  const binauralParams = useStore((s) => s.binauralParams);
   const envelope = useStore((s) => s.envelope);
+  const activeTab = useStore((s) => s.activeTab);
   const setSource = useStore((s) => s.setSource);
   const setEngineState = useStore((s) => s.setEngineState);
   const setPlayhead = useStore((s) => s.setPlayhead);
@@ -141,6 +146,18 @@ export function App() {
     e.setParams(params);
   }, [params]);
 
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    e.setProcessParams(processParams);
+  }, [processParams]);
+
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    e.setBinauralParams(binauralParams);
+  }, [binauralParams]);
+
   // Push envelope changes to the engine.
   useEffect(() => {
     const e = engineRef.current;
@@ -197,7 +214,10 @@ export function App() {
       <FileInfoBar />
       <Tabs />
       <div className="panel">
-        <ParametersPanel />
+        {activeTab === 'Parameters' && <ParametersPanel />}
+        {activeTab === 'Process' && <ProcessPanel />}
+        {activeTab === 'Binaural beats' && <BinauralPanel />}
+        {activeTab === 'Write to file' && <ParametersPanel />}
       </div>
       <TransportBar engineRef={engineRef} />
     </div>

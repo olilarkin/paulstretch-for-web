@@ -1,15 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { syncEngineFromStore } from './sync';
 import { useStore } from '../../state/store';
-import type { AudioSource, Envelope, Params } from '../../types';
+import type { AudioSource, BinauralParams, Envelope, Params, ProcessParams } from '../../types';
 
 class FakeEngine {
   params: Params | null = null;
+  processParams: ProcessParams | null = null;
+  binauralParams: BinauralParams | null = null;
   envelope: Envelope | null = null;
   source: AudioSource | null = null;
 
   setParams(params: Params): void {
     this.params = params;
+  }
+
+  setProcessParams(processParams: ProcessParams): void {
+    this.processParams = processParams;
+  }
+
+  setBinauralParams(binauralParams: BinauralParams): void {
+    this.binauralParams = binauralParams;
   }
 
   setEnvelope(envelope: Envelope): void {
@@ -57,6 +67,8 @@ describe('syncEngineFromStore', () => {
       syncEngineFromStore(engine);
 
       expect(engine.params).toEqual(params);
+      expect(engine.processParams).toBe(useStore.getState().processParams);
+      expect(engine.binauralParams).toBe(useStore.getState().binauralParams);
       expect(engine.envelope).toEqual(envelope);
       expect(engine.source).toBe(source);
     } finally {

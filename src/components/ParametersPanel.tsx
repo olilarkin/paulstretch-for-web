@@ -31,10 +31,14 @@ export function ParametersPanel() {
   return (
     <div className="parameters-panel">
       <div className="param-row">
-        <span className="label">
+        <span
+          className="label"
+          title="Base time-stretch amount. If the Stretch Multiplier graph is enabled, its values multiply this amount."
+        >
           Stretch: {formatStretchFactor(stretch)} ({formatDuration(dur * stretch)})
         </span>
         <input
+          title="Base time-stretch amount. If the Stretch Multiplier graph is enabled, its values multiply this amount."
           type="range"
           min={0}
           max={1}
@@ -44,7 +48,7 @@ export function ParametersPanel() {
           className="slider grow"
         />
         <span className="inline-control">
-          <button className="small-button" title="Edit numerically"
+          <button className="small-button" title="Enter an exact stretch multiplier."
             onClick={() => {
               const v = prompt('Stretch factor (raw multiplier):', stretch.toString());
               if (v == null) return;
@@ -56,8 +60,12 @@ export function ParametersPanel() {
           >
             S
           </button>
-          <label>Mode:</label>
-          <select value={params.mode} onChange={(e) => setMode(e.target.value as StretchMode)}>
+          <label title="Choose the stretch scale: normal stretch, extreme stretch, or shortening.">Mode:</label>
+          <select
+            title="Choose the stretch scale: normal stretch, extreme stretch, or shortening."
+            value={params.mode}
+            onChange={(e) => setMode(e.target.value as StretchMode)}
+          >
             {MODES.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -68,8 +76,14 @@ export function ParametersPanel() {
       </div>
       <hr />
       <div className="param-row">
-        <span className="label">Window size (samples): {formatFftSize(fftSize)}</span>
+        <span
+          className="label"
+          title="FFT window size. Larger windows improve frequency resolution but smear time detail."
+        >
+          Window size (samples): {formatFftSize(fftSize)}
+        </span>
         <input
+          title="FFT window size. Larger windows improve frequency resolution but smear time detail."
           type="range"
           min={0}
           max={1}
@@ -79,8 +93,12 @@ export function ParametersPanel() {
           className="slider grow"
         />
         <span className="inline-control">
-          <label>Type:</label>
-          <select value={params.windowType} onChange={(e) => setWindowType(e.target.value as WindowType)}>
+          <label title="Window shape used before spectrum analysis. It changes leakage and transient softness.">Type:</label>
+          <select
+            title="Window shape used before spectrum analysis. It changes leakage and transient softness."
+            value={params.windowType}
+            onChange={(e) => setWindowType(e.target.value as WindowType)}
+          >
             {WINDOWS.map((w) => (
               <option key={w} value={w}>
                 {w}
@@ -95,8 +113,14 @@ export function ParametersPanel() {
         </span>
       </div>
       <div className="param-row">
-        <span className="label">Onset sensitivity:</span>
+        <span
+          className="label"
+          title="Detect strong attacks and advance input faster around them to reduce transient smearing."
+        >
+          Onset sensitivity:
+        </span>
         <input
+          title="Detect strong attacks and advance input faster around them to reduce transient smearing."
           type="range"
           min={0}
           max={1}

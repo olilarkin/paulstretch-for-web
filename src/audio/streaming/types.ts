@@ -1,4 +1,4 @@
-import type { Params, WindowType } from '../../types';
+import type { BinauralParams, Params, ProcessParams, WindowType } from '../../types';
 import type { RingHandles } from './ring-buffer';
 
 // ── Worker config (subset of Params, already-resolved) ─────────────────────
@@ -17,6 +17,25 @@ export interface ResolvedParams extends StretcherConfig {
   raw: Params;
 }
 
+export interface ProcessConfig {
+  options: Omit<ProcessParams, 'arbitraryFilter'> & {
+    arbitraryFilterEnabled: boolean;
+  };
+  arbitraryFilter: {
+    enabled: boolean;
+    positions: Float32Array;
+    values: Float32Array;
+  };
+}
+
+export interface BinauralConfig {
+  options: Omit<BinauralParams, 'frequencyEnvelope'>;
+  frequencyEnvelope: {
+    positions: Float32Array;
+    values: Float32Array;
+  };
+}
+
 // ── Source descriptor ──────────────────────────────────────────────────────
 
 export interface SourcePayload {
@@ -31,6 +50,8 @@ export type MainToWorker =
   | { type: 'init'; channelCount: number; sampleRate: number; ring: RingHandles }
   | { type: 'source'; source: SourcePayload }
   | { type: 'params'; config: StretcherConfig }
+  | { type: 'process'; config: ProcessConfig }
+  | { type: 'binaural'; config: BinauralConfig }
   | {
       type: 'envelope';
       enabled: boolean;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useStore } from '../../state/store';
 import { EnvelopeSidebar } from './EnvelopeSidebar';
-import { densify } from './interpolation';
+import { densifyLogValuesWithBreakpoints } from './interpolation';
 
 const W = 720;
 const H = 240;
@@ -17,7 +17,7 @@ export function EnvelopeEditor() {
   const [canvasSize, setCanvasSize] = useState({ width: W, height: H });
 
   // Densified curve for visualisation (same logic that's sent to the renderer).
-  const curve = useMemo(() => densify(envelope, 128), [envelope]);
+  const curve = useMemo(() => densifyLogValuesWithBreakpoints(envelope, 128), [envelope]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -144,47 +144,56 @@ export function EnvelopeEditor() {
   return (
     <div className="envelope-container">
       <EnvelopeSidebar />
-      <svg
-        ref={svgRef}
-        className={'envelope-canvas' + (disabled ? ' disabled' : '')}
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        onPointerDown={onCanvasPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onContextMenu={onContextMenu}
-      >
-        {/* Background */}
-        <rect x={0} y={0} width={W} height={H} fill="#ffffff" stroke="#777" vectorEffect="non-scaling-stroke" />
-        {/* Grid */}
-        {gridV.map((g) => (
-          <line key={'v' + g} x1={xToScreen(g)} y1={PAD} x2={xToScreen(g)} y2={H - PAD} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
-        ))}
-        {gridV.map((g) => (
-          <line key={'h' + g} x1={PAD} y1={PAD + g * (H - 2 * PAD)} x2={W - PAD} y2={PAD + g * (H - 2 * PAD)} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
-        ))}
-        {/* Curve */}
-        <path d={pathD} fill="none" stroke="#000" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-        {/* Points */}
-        {envelope.points.map((p, i) => {
-          const isSelected = envelope.selectedIndex === i;
-          return (
-            <ellipse
-              key={i}
-              data-point-idx={i}
-              cx={xToScreen(p.position)}
-              cy={yToScreen(p.value)}
-              rx={handleRx}
-              ry={handleRy}
-              fill={isSelected ? '#dd2020' : '#000'}
-              stroke={isSelected ? '#a00' : 'none'}
-              vectorEffect="non-scaling-stroke"
-              onPointerDown={onPointPointerDown(i)}
-              style={{ cursor: 'pointer' }}
-            />
-          );
-        })}
-      </svg>
+      <div className="graph-with-y-axis envelope-graph">
+        <div className="axis-y-label">Multiplier</div>
+        <div className="graph-main">
+          <svg
+            ref={svgRef}
+            className={'envelope-canvas' + (disabled ? ' disabled' : '')}
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            onPointerDown={onCanvasPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onContextMenu={onContextMenu}
+          >
+            <title>Draw the stretch multiplier over input time. Effective stretch = Stretch slider value times this graph value.</title>
+            {/* Background */}
+            <rect x={0} y={0} width={W} height={H} fill="#ffffff" stroke="#777" vectorEffect="non-scaling-stroke" />
+            {/* Grid */}
+            {gridV.map((g) => (
+              <line key={'v' + g} x1={xToScreen(g)} y1={PAD} x2={xToScreen(g)} y2={H - PAD} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
+            ))}
+            {gridV.map((g) => (
+              <line key={'h' + g} x1={PAD} y1={PAD + g * (H - 2 * PAD)} x2={W - PAD} y2={PAD + g * (H - 2 * PAD)} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
+            ))}
+            {/* Curve */}
+            <path d={pathD} fill="none" stroke="#000" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+            {/* Points */}
+            {envelope.points.map((p, i) => {
+              const isSelected = envelope.selectedIndex === i;
+              return (
+                <ellipse
+                  key={i}
+                  data-point-idx={i}
+                  cx={xToScreen(p.position)}
+                  cy={yToScreen(p.value)}
+                  rx={handleRx}
+                  ry={handleRy}
+                  fill={isSelected ? '#dd2020' : '#000'}
+                  stroke={isSelected ? '#a00' : 'none'}
+                  vectorEffect="non-scaling-stroke"
+                  onPointerDown={onPointPointerDown(i)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <title>{`Stretch multiplier point: position ${p.position.toFixed(3)}, value ${p.value.toFixed(4)}x of the Stretch slider`}</title>
+                </ellipse>
+              );
+            })}
+          </svg>
+          <div className="axis-x-label">Input position</div>
+        </div>
+      </div>
     </div>
   );
 }
