@@ -416,7 +416,7 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 2px 2px 0;
 }
 .binaural-box {
-  width: min(980px, 100%);
+  width: 100%;
 }
 .binaural-graph {
   margin-top: 8px;
