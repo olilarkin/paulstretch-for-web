@@ -1,10 +1,7 @@
 import type { StretchMode } from '../types';
 
 const FFT_MIN = 512;
-// Matches the original C++: 2^12 * 512 ≈ 2,097,152 at slider=1. The renderer
-// rounds to backend constraints, so we don't snap to a power of two here —
-// this lets the displayed sample count vary smoothly with the slider, like
-// the original UI.
+// Matches the original C++: 2^12 * 512 ≈ 2,097,152 at slider=1.
 const FFT_MAX = 2097152;
 // Preview streaming writes one whole stretcher block into a fixed-size SAB ring.
 // Keep the preview block comfortably below the ring capacity so the worker can
@@ -23,10 +20,27 @@ export function sliderToStretch(mode: StretchMode, x: number): number {
   }
 }
 
+function isClassicFastSize(n: number): boolean {
+  let m = n;
+  while (m % 5 === 0) m /= 5;
+  while (m % 3 === 0) m /= 3;
+  while (m % 2 === 0) m /= 2;
+  return m < 2;
+}
+
+export function optimizeClassicFftSize(n: number): number {
+  const target = Math.max(FFT_MIN, Math.min(FFT_MAX, Math.round(n)));
+  let down = target;
+  let up = target;
+  while (down > FFT_MIN && !isClassicFastSize(down)) down--;
+  while (up < FFT_MAX && !isClassicFastSize(up)) up++;
+  return (target - down) < (up - target) ? down : up;
+}
+
 export function sliderToFftSize(x: number): number {
   const clamped = Math.max(0, Math.min(1, x));
   const raw = 512 * Math.pow(2, Math.pow(clamped, 1.5) * 12);
-  return Math.max(FFT_MIN, Math.min(FFT_MAX, Math.round(raw)));
+  return optimizeClassicFftSize(raw);
 }
 
 export function sliderToStreamingFftSize(x: number): number {

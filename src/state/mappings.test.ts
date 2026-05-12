@@ -5,6 +5,7 @@ import {
   formatDuration,
   formatFftSize,
   formatStretchFactor,
+  optimizeClassicFftSize,
   sliderToStreamingFftSize,
   sliderToFftSize,
   sliderToStretch,
@@ -42,6 +43,11 @@ describe('sliderToFftSize', () => {
   });
   it('reaches ~2M at x=1', () => {
     expect(sliderToFftSize(1)).toBeCloseTo(2097152, -3);
+  });
+  it('uses the original Win32 KISSFFT-friendly size optimization', () => {
+    expect(sliderToFftSize(0.47)).toBe(7500);
+    expect(sliderToFftSize(0.5)).toBe(9720);
+    expect(optimizeClassicFftSize(7468)).toBe(7500);
   });
 });
 

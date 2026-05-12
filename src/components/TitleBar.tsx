@@ -1,23 +1,16 @@
 import { useRef, useState } from 'react';
-import { useStore } from '../state/store';
-import { loadAudioFile } from '../audio/loadFile';
-import { resumeAudioContext } from '../audio/playback';
 
-export function TitleBar() {
+interface Props {
+  onFile: (file: File | undefined) => Promise<void>;
+}
+
+export function TitleBar({ onFile }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const setSource = useStore((s) => s.setSource);
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const handleFile = async (file: File | undefined) => {
-    if (!file) return;
-    await resumeAudioContext();
-    try {
-      const src = await loadAudioFile(file);
-      setSource(src);
-    } catch (e) {
-      console.error('Failed to decode audio file', e);
-      alert('Failed to decode audio file: ' + (e instanceof Error ? e.message : String(e)));
-    }
+    await onFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
