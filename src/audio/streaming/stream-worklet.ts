@@ -40,6 +40,8 @@ interface RingView {
 
 const READ_POS = 0;
 const WRITE_POS = 1;
+const RESET_EPOCH = 2;
+const RESET_TARGET = 3;
 
 function attach(h: RingHandles): RingView {
   return {
@@ -52,6 +54,14 @@ function attach(h: RingHandles): RingView {
 
 function readableFrames(v: RingView): number {
   return Atomics.load(v.control, WRITE_POS) - Atomics.load(v.control, READ_POS);
+}
+
+function consumeReset(v: RingView, seenEpoch: number): number {
+  const epoch = Atomics.load(v.control, RESET_EPOCH);
+  if (epoch !== seenEpoch) {
+    Atomics.store(v.control, READ_POS, Atomics.load(v.control, RESET_TARGET));
+  }
+  return epoch;
 }
 
 function readInto(v: RingView, outs: Float32Array[], offset: number, n: number): number {
@@ -79,6 +89,7 @@ class PaulstretchProcessor extends AudioWorkletProcessor {
   private ring: RingView | null = null;
   private framesMissed = 0;
   private lastUnderrunReport = 0;
+  private seenResetEpoch = 0;
 
   constructor() {
     super();
@@ -99,6 +110,7 @@ class PaulstretchProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    this.seenResetEpoch = consumeReset(this.ring, this.seenResetEpoch);
     const got = readInto(this.ring, out, 0, nFrames);
     if (got < nFrames) {
       // Zero-fill the underrun tail.

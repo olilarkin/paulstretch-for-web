@@ -6,6 +6,7 @@ import { Tabs } from './components/Tabs';
 import { ParametersPanel } from './components/ParametersPanel';
 import { TransportBar } from './components/TransportBar';
 import { StreamingEngine } from './audio/streaming/engine';
+import { syncEngineFromStore } from './audio/streaming/sync';
 import { getAudioContext, resumeAudioContext } from './audio/playback';
 import { loadAudioFile } from './audio/loadFile';
 
@@ -32,29 +33,27 @@ export function App() {
   // Boot the engine once on first mount.
   useEffect(() => {
     let cancelled = false;
+    const unsubscribe: Array<() => void> = [];
     setEngineState('loading');
     getEngine()
       .then((e) => {
         if (cancelled) return;
-        engineRef.current = e;
-        e.onReady((info) => {
+        unsubscribe.push(e.onReady((info) => {
+          engineRef.current = e;
           console.log('[paulstretch-wasm]', info.backend, info.simdArch, 'simd-width', info.simdSize);
           setEngineState('ready');
-        });
-        e.onError((msg) => {
+          syncEngineFromStore(e);
+        }));
+        unsubscribe.push(e.onError((msg) => {
           console.error('[engine error]', msg);
           setEngineState('error', msg);
-        });
-        e.onPosition((cursor, total /*, running */) => {
+        }));
+        unsubscribe.push(e.onPosition((cursor, total /*, running */) => {
           setPlayhead(cursor, total);
-        });
-        e.onEnded(() => {
+        }));
+        unsubscribe.push(e.onEnded(() => {
           setEngineState('ready');
-        });
-        // Push current params/envelope so the engine matches the UI before
-        // any source is loaded.
-        e.setParams(params);
-        e.setEnvelope(envelope);
+        }));
       })
       .catch((err) => {
         console.error('[engine boot]', err);
@@ -62,9 +61,10 @@ export function App() {
       });
     return () => {
       cancelled = true;
+      engineRef.current = null;
+      while (unsubscribe.length > 0) unsubscribe.pop()?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setEngineState, setPlayhead]);
 
   // Push param changes to the engine.
   useEffect(() => {

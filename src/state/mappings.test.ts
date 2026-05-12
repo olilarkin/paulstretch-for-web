@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  MAX_STREAMING_FFT_SIZE,
   fftResolution,
   formatDuration,
   formatFftSize,
   formatStretchFactor,
+  sliderToStreamingFftSize,
   sliderToFftSize,
   sliderToStretch,
 } from './mappings';
@@ -40,6 +42,17 @@ describe('sliderToFftSize', () => {
   });
   it('reaches ~2M at x=1', () => {
     expect(sliderToFftSize(1)).toBeCloseTo(2097152, -3);
+  });
+});
+
+describe('sliderToStreamingFftSize', () => {
+  it('keeps the preview block below the fixed streaming ring capacity', () => {
+    expect(sliderToStreamingFftSize(1)).toBe(MAX_STREAMING_FFT_SIZE);
+    expect(sliderToStreamingFftSize(1)).toBeLessThan(96000);
+  });
+
+  it('matches the full-range mapping below the streaming cap', () => {
+    expect(sliderToStreamingFftSize(0.5)).toBe(sliderToFftSize(0.5));
   });
 });
 

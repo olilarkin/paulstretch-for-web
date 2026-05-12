@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useStore } from '../../state/store';
 import { EnvelopeSidebar } from './EnvelopeSidebar';
 import { densify } from './interpolation';
@@ -6,6 +6,7 @@ import { densify } from './interpolation';
 const W = 720;
 const H = 240;
 const PAD = 8;
+const HANDLE_RADIUS_PX = 5;
 
 export function EnvelopeEditor() {
   const envelope = useStore((s) => s.envelope);
@@ -13,9 +14,25 @@ export function EnvelopeEditor() {
   const selectEnvelopePoint = useStore((s) => s.selectEnvelopePoint);
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: W, height: H });
 
   // Densified curve for visualisation (same logic that's sent to the renderer).
   const curve = useMemo(() => densify(envelope, 128), [envelope]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const updateSize = () => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setCanvasSize({ width: rect.width, height: rect.height });
+      }
+    };
+    updateSize();
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(svg);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // Coordinate transforms.
   const xToScreen = (x: number) => PAD + x * (W - 2 * PAD);
@@ -36,7 +53,7 @@ export function EnvelopeEditor() {
     return Math.exp(lo + Math.max(0, Math.min(1, t)) * (hi - lo));
   };
 
-  const eventCoords = (e: ReactPointerEvent<SVGSVGElement> | ReactPointerEvent<SVGCircleElement>) => {
+  const eventCoords = (e: ReactPointerEvent<SVGElement>) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
@@ -60,7 +77,7 @@ export function EnvelopeEditor() {
     selectEnvelopePoint(newIdx >= 0 ? newIdx : null);
   };
 
-  const onPointPointerDown = (idx: number) => (e: ReactPointerEvent<SVGCircleElement>) => {
+  const onPointPointerDown = (idx: number) => (e: ReactPointerEvent<SVGEllipseElement>) => {
     e.stopPropagation();
     if (e.button === 2) {
       // right-click: delete (but never delete the two endpoints when only 2 left)
@@ -121,6 +138,8 @@ export function EnvelopeEditor() {
   for (let i = 1; i < 10; i++) gridV.push(i / 10);
 
   const disabled = !envelope.enabled;
+  const handleRx = HANDLE_RADIUS_PX * (W / canvasSize.width);
+  const handleRy = HANDLE_RADIUS_PX * (H / canvasSize.height);
 
   return (
     <div className="envelope-container">
@@ -136,28 +155,30 @@ export function EnvelopeEditor() {
         onContextMenu={onContextMenu}
       >
         {/* Background */}
-        <rect x={0} y={0} width={W} height={H} fill="#ffffff" stroke="#777" />
+        <rect x={0} y={0} width={W} height={H} fill="#ffffff" stroke="#777" vectorEffect="non-scaling-stroke" />
         {/* Grid */}
         {gridV.map((g) => (
-          <line key={'v' + g} x1={xToScreen(g)} y1={PAD} x2={xToScreen(g)} y2={H - PAD} stroke="#e2e2e2" />
+          <line key={'v' + g} x1={xToScreen(g)} y1={PAD} x2={xToScreen(g)} y2={H - PAD} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
         ))}
         {gridV.map((g) => (
-          <line key={'h' + g} x1={PAD} y1={PAD + g * (H - 2 * PAD)} x2={W - PAD} y2={PAD + g * (H - 2 * PAD)} stroke="#e2e2e2" />
+          <line key={'h' + g} x1={PAD} y1={PAD + g * (H - 2 * PAD)} x2={W - PAD} y2={PAD + g * (H - 2 * PAD)} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
         ))}
         {/* Curve */}
-        <path d={pathD} fill="none" stroke="#000" strokeWidth={1.5} />
+        <path d={pathD} fill="none" stroke="#000" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
         {/* Points */}
         {envelope.points.map((p, i) => {
           const isSelected = envelope.selectedIndex === i;
           return (
-            <circle
+            <ellipse
               key={i}
               data-point-idx={i}
               cx={xToScreen(p.position)}
               cy={yToScreen(p.value)}
-              r={5}
+              rx={handleRx}
+              ry={handleRy}
               fill={isSelected ? '#dd2020' : '#000'}
               stroke={isSelected ? '#a00' : 'none'}
+              vectorEffect="non-scaling-stroke"
               onPointerDown={onPointPointerDown(i)}
               style={{ cursor: 'pointer' }}
             />

@@ -6,6 +6,10 @@ const FFT_MIN = 512;
 // this lets the displayed sample count vary smoothly with the slider, like
 // the original UI.
 const FFT_MAX = 2097152;
+// Preview streaming writes one whole stretcher block into a fixed-size SAB ring.
+// Keep the preview block comfortably below the ring capacity so the worker can
+// always produce at least one block. Offline rendering can still use FFT_MAX.
+export const MAX_STREAMING_FFT_SIZE = 65536;
 
 export function sliderToStretch(mode: StretchMode, x: number): number {
   const clamped = Math.max(0, Math.min(1, x));
@@ -23,6 +27,10 @@ export function sliderToFftSize(x: number): number {
   const clamped = Math.max(0, Math.min(1, x));
   const raw = 512 * Math.pow(2, Math.pow(clamped, 1.5) * 12);
   return Math.max(FFT_MIN, Math.min(FFT_MAX, Math.round(raw)));
+}
+
+export function sliderToStreamingFftSize(x: number): number {
+  return Math.min(sliderToFftSize(x), MAX_STREAMING_FFT_SIZE);
 }
 
 export function formatStretchFactor(stretch: number): string {

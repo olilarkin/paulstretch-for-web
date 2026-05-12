@@ -6,9 +6,10 @@
 //   control: Int32Array(4) in its own SAB
 //     [0] = readPos  (frames; monotonic, written only by consumer)
 //     [1] = writePos (frames; monotonic, written only by producer)
-//     [2] = resetEpoch (incremented on reset; informational, not used for
-//                        correctness — reset() just snaps writePos to readPos)
-//     [3] = reserved
+//     [2] = resetEpoch  (incremented by producer when old buffered audio
+//                        should be dropped)
+//     [3] = resetTarget (writePos at the time resetEpoch was incremented;
+//                        consumer snaps readPos here on its next block)
 //   data: Float32Array(capacity * channels) in its own SAB
 //     Interleaved: data[(frame % capacity) * channels + ch].
 //
@@ -33,6 +34,7 @@ export interface RingView {
 const READ_POS = 0;
 const WRITE_POS = 1;
 const RESET_EPOCH = 2;
+const RESET_TARGET = 3;
 
 export function ringCreate(channels: number, capacityFrames: number): {
   view: RingView;
@@ -72,12 +74,18 @@ export function readableFrames(v: RingView): number {
 
 /**
  * Producer: write up to n frames from channel chunks into the ring.
- * `chunks[ch]` is a Float32Array of at least n samples for channel `ch`.
+ * `chunks[ch]` is a Float32Array of at least sourceOffset + n samples for
+ * channel `ch`.
  * Channels beyond `v.channels` are ignored; missing channels are filled
  * from chunks[0] (so mono input becomes stereo in the ring).
  * Returns the number of frames actually written.
  */
-export function ringWrite(v: RingView, chunks: Float32Array[], n: number): number {
+export function ringWrite(
+  v: RingView,
+  chunks: Float32Array[],
+  n: number,
+  sourceOffset = 0,
+): number {
   const avail = writableFrames(v);
   const toWrite = Math.min(avail, n);
   if (toWrite <= 0) return 0;
@@ -89,7 +97,7 @@ export function ringWrite(v: RingView, chunks: Float32Array[], n: number): numbe
     const base = ringFrame * channels;
     for (let ch = 0; ch < channels; ch++) {
       const src = ch < chunks.length ? chunks[ch] : chunks[0];
-      v.data[base + ch] = src[i];
+      v.data[base + ch] = src[sourceOffset + i];
     }
   }
   Atomics.add(v.control, WRITE_POS, toWrite);
@@ -125,15 +133,20 @@ export function ringRead(v: RingView, outs: Float32Array[], offset: number, n: n
 }
 
 /**
- * Producer-side reset: drop all buffered samples by snapping writePos
- * to readPos. The consumer's next read will see an empty ring.
+ * Producer-side reset request. The producer never writes readPos; the consumer
+ * applies the reset on its own thread before its next read. Samples written
+ * after resetTarget remain readable once the consumer has dropped the old tail.
  */
 export function ringReset(v: RingView): void {
-  const readPos = Atomics.load(v.control, READ_POS);
-  Atomics.store(v.control, WRITE_POS, readPos);
+  const writePos = Atomics.load(v.control, WRITE_POS);
+  Atomics.store(v.control, RESET_TARGET, writePos);
   Atomics.add(v.control, RESET_EPOCH, 1);
 }
 
 export function ringResetEpoch(v: RingView): number {
   return Atomics.load(v.control, RESET_EPOCH);
+}
+
+export function ringResetTarget(v: RingView): number {
+  return Atomics.load(v.control, RESET_TARGET);
 }

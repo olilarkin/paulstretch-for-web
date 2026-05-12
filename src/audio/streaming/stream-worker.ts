@@ -11,7 +11,7 @@ import type {
 } from './types';
 import type { WindowType } from '../../types';
 import type { RingHandles, RingView } from './ring-buffer';
-import { ringAttach, ringReset, ringWrite, writableFrames } from './ring-buffer';
+import { ringAttach, ringReset, ringWrite } from './ring-buffer';
 
 // When the ring is full we yield and retry. 20 ms is much shorter than the
 // ring's buffered duration (~1 s by default), so the worklet is never close
@@ -70,6 +70,8 @@ const state = {
   running: false,
   loop: true,
   inputScratch: [] as Float32Array[],
+  pendingOutputs: null as Float32Array[] | null,
+  pendingOffset: 0,
   pumpTimer: 0 as number | ReturnType<typeof setTimeout>,
   positionTimer: 0 as number | ReturnType<typeof setInterval>,
 };
@@ -114,19 +116,41 @@ function rebuildStretchers() {
   // discontinuity at the seam is audible but no silence drops.
 }
 
+function clearPendingOutput() {
+  state.pendingOutputs = null;
+  state.pendingOffset = 0;
+}
+
+function flushPendingOutput(): boolean {
+  if (!state.ring || !state.pendingOutputs) return true;
+  const totalFrames = state.pendingOutputs[0]?.length ?? 0;
+  const remaining = totalFrames - state.pendingOffset;
+  if (remaining <= 0) {
+    clearPendingOutput();
+    return true;
+  }
+  const written = ringWrite(
+    state.ring,
+    state.pendingOutputs,
+    remaining,
+    state.pendingOffset,
+  );
+  state.pendingOffset += written;
+  if (state.pendingOffset >= totalFrames) {
+    clearPendingOutput();
+    return true;
+  }
+  return false;
+}
+
 // Produce one block (= bufsize frames per channel) and write into the ring.
 // Returns false if the ring is full (caller should yield) or if EOS was
 // reached without looping.
 function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' | 'done' {
   if (!state.source || !state.stretchers.length || !state.ring) return 'done';
+  if (state.pendingOutputs && !flushPendingOutput()) return 'ringFull';
   const totalFrames = state.source.totalFrames;
   const channels = state.source.channels;
-
-  // Need bufsize frames of headroom in the ring before producing — otherwise
-  // we'd block in mid-step and overwrite the start of our just-produced
-  // block.
-  const bufsize = state.stretchers[0].bufsize();
-  if (writableFrames(state.ring) < bufsize) return 'ringFull';
 
   const want = state.firstStep
     ? state.stretchers[0].maxInputChunk()
@@ -142,6 +166,7 @@ function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' |
       }
       state.cursor = 0;
       state.firstStep = true;
+      clearPendingOutput();
       return 'wrote'; // try again on rewound source
     }
     state.running = false;
@@ -163,13 +188,18 @@ function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' |
   }
 
   const positionPct = (100.0 * state.cursor) / totalFrames;
+  let maxOnset = 0;
   for (let c = 0; c < channels.length; c++) {
-    const result = state.stretchers[c].step(
+    const result = state.stretchers[c].stepWithoutOnsetFeedback(
       want > 0 ? state.inputScratch[c].subarray(0, want) : null,
       positionPct,
     );
     // Step's wasm-returned Float32Array is freshly allocated each call.
     stretchOutputs[c] = result.output;
+    maxOnset = Math.max(maxOnset, result.onset);
+  }
+  for (const s of state.stretchers) {
+    s.applyOnset(maxOnset);
   }
 
   if (want > 0) state.cursor = Math.min(state.cursor + want, totalFrames);
@@ -178,8 +208,9 @@ function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' |
 
   state.firstStep = false;
 
-  ringWrite(state.ring, stretchOutputs, bufsize);
-  return 'wrote';
+  state.pendingOutputs = stretchOutputs.slice();
+  state.pendingOffset = 0;
+  return flushPendingOutput() ? 'wrote' : 'ringFull';
 }
 
 function pumpLoop() {
@@ -254,6 +285,7 @@ async function handleMain(msg: MainToWorker) {
       };
       state.cursor = 0;
       state.firstStep = true;
+      clearPendingOutput();
       if (state.config) rebuildStretchers();
       if (state.ring) ringReset(state.ring);
       return;
@@ -316,6 +348,7 @@ async function handleMain(msg: MainToWorker) {
       state.running = false;
       state.cursor = 0;
       state.firstStep = true;
+      clearPendingOutput();
       for (const s of state.stretchers) s.reset();
       if (state.ring) ringReset(state.ring);
       return;
@@ -325,6 +358,7 @@ async function handleMain(msg: MainToWorker) {
       const frac = Math.max(0, Math.min(1, msg.positionFrac));
       state.cursor = Math.floor(frac * state.source.totalFrames);
       state.firstStep = true;
+      clearPendingOutput();
       for (const s of state.stretchers) s.reset();
       if (state.envelope?.enabled && state.envelope.positions.length > 0) {
         for (const s of state.stretchers) {
@@ -343,6 +377,7 @@ async function handleMain(msg: MainToWorker) {
       stopPositionReports();
       disposeStretchers();
       state.running = false;
+      clearPendingOutput();
       return;
     }
   } catch (err) {

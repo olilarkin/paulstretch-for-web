@@ -3,7 +3,7 @@ import type {
   Envelope,
   Params,
 } from '../../types';
-import { sliderToFftSize, sliderToStretch } from '../../state/mappings';
+import { sliderToStreamingFftSize, sliderToStretch } from '../../state/mappings';
 import { densify } from '../../components/EnvelopeEditor/interpolation';
 import { ringCreate, type RingHandles } from './ring-buffer';
 // Vite's `?worker&url` resolves to a URL that points at a JS-transformed,
@@ -147,7 +147,7 @@ export class StreamingEngine {
   setParams(params: Params): void {
     const config: StretcherConfig = {
       stretch: sliderToStretch(params.mode, params.stretchSlider),
-      fftSize: sliderToFftSize(params.windowSlider),
+      fftSize: sliderToStreamingFftSize(params.windowSlider),
       windowType: params.windowType,
       onsetSensitivity: params.onsetSensitivity,
     };

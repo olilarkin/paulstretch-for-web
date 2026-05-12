@@ -4,7 +4,7 @@ import {
   formatDuration,
   formatFftSize,
   formatStretchFactor,
-  sliderToFftSize,
+  sliderToStreamingFftSize,
   sliderToStretch,
 } from '../state/mappings';
 import type { StretchMode, WindowType } from '../types';
@@ -25,7 +25,7 @@ export function ParametersPanel() {
   const sr = source?.sampleRate ?? 44100;
   const dur = source?.durationSec ?? 0;
   const stretch = sliderToStretch(params.mode, params.stretchSlider);
-  const fftSize = sliderToFftSize(params.windowSlider);
+  const fftSize = sliderToStreamingFftSize(params.windowSlider);
   const res = fftResolution(fftSize, sr);
 
   return (
