@@ -3,8 +3,8 @@ import PaulstretchModule, {
   type BinauralBeatsProcessor,
   type PaulstretchModule as PSModule,
   type StreamingStretcher,
-} from 'paulstretch-wasm';
-import wasmUrl from 'paulstretch-wasm/paulstretch.wasm?url';
+} from '@olilarkin/paulstretch-wasm';
+import wasmUrl from '@olilarkin/paulstretch-wasm/paulstretch.wasm?url';
 import type {
   BinauralConfig,
   MainToWorker,

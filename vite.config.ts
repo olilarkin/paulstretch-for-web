@@ -9,21 +9,21 @@ const coopCoepHeaders = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
+// On GitHub Pages the site is served from /<repo>/, so assets need that prefix.
+// Locally and on previews we want '/'.
+const base = process.env.GITHUB_ACTIONS ? '/paulstretch2026/' : '/';
+
 export default defineConfig({
+  base,
   plugins: [react()],
   worker: {
     format: 'es',
   },
   optimizeDeps: {
-    exclude: ['paulstretch-wasm'],
+    exclude: ['@olilarkin/paulstretch-wasm'],
   },
   server: {
     headers: coopCoepHeaders,
-    fs: {
-      // Allow serving files outside the project root so the local
-      // paulstretch-wasm package (file:../libpaulstretch/npm) works.
-      allow: ['..'],
-    },
   },
   preview: {
     headers: coopCoepHeaders,
