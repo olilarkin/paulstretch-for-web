@@ -36,7 +36,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  min-width: 980px;
+  min-width: 360px;
   overflow: hidden;
 }
 
@@ -99,6 +99,7 @@ body {
 /* Panel */
 .panel {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   padding: 8px 10px;
   background: var(--bg);
@@ -263,11 +264,32 @@ input[type="range"]::-webkit-slider-thumb {
 .process-panel, .binaural-panel {
   font-size: 12px;
 }
+.process-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  height: 100%;
+  min-height: 0;
+}
 .process-grid {
   display: grid;
-  grid-template-columns: 150px 135px 135px 135px 185px 160px 235px;
+  grid-template-columns:
+    minmax(130px, 0.8fr)
+    minmax(150px, 0.82fr)
+    minmax(125px, 0.72fr)
+    minmax(125px, 1fr)
+    minmax(125px, 1fr)
+    minmax(125px, 0.86fr);
   gap: 5px;
-  align-items: start;
+  align-items: stretch;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.shift-stack, .utility-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 .process-box {
   background: var(--bg);
@@ -288,7 +310,7 @@ input[type="range"]::-webkit-slider-thumb {
   font-weight: normal;
   min-height: 18px;
 }
-.number-row, .slider-row {
+.number-row, .slider-row, .stepper-number-row {
   display: grid;
   grid-template-columns: minmax(58px, auto) minmax(0, 1fr);
   align-items: center;
@@ -300,6 +322,28 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .shift-box .number-row input {
   max-width: 100%;
+}
+.stepper-number-row {
+  grid-template-columns: minmax(38px, auto) minmax(82px, 1fr);
+}
+.stepper-buttons {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(28px, 1fr));
+  gap: 2px;
+}
+.stepper-buttons button {
+  min-width: 0;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 9px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.stepper-buttons button:hover {
+  background: #e0e0e0;
 }
 .slider-row {
   grid-template-columns: minmax(58px, auto) minmax(72px, 1fr) 48px;
@@ -330,11 +374,11 @@ input[type="range"]::-webkit-slider-thumb {
   grid-template-columns: 70px minmax(180px, 1fr) 64px;
   max-width: 430px;
 }
-.number-row span, .slider-row span {
+.number-row span, .slider-row span, .stepper-number-row span {
   white-space: nowrap;
   font-size: 11px;
 }
-.number-row input, .number-row select, .compact-number {
+.number-row input, .number-row select, .compact-number, .stepper-number-row input {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
@@ -371,12 +415,17 @@ input[type="range"]::-webkit-slider-thumb {
   height: 48px;
 }
 .arbitrary-box {
-  margin-top: 7px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .free-filter-wrap {
   display: flex;
   gap: 6px;
   margin-top: 4px;
+  flex: 1;
+  min-height: 0;
 }
 .free-filter-controls {
   width: 84px;
@@ -392,16 +441,23 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 10px;
 }
 .free-filter-plot {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 .free-filter-graph {
+  display: flex;
+  flex: 1;
+  min-height: 0;
   width: 100%;
 }
 .free-filter-canvas {
   display: block;
   width: 100%;
-  height: 180px;
+  height: 100%;
+  min-height: 180px;
   background: white;
   border: 1px solid var(--border);
   touch-action: none;
@@ -429,6 +485,35 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--border);
   touch-action: none;
   user-select: none;
+}
+
+@media (max-width: 900px) {
+  .process-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+}
+
+@media (max-width: 560px) {
+  .app {
+    min-width: 320px;
+  }
+  .tabs {
+    overflow-x: auto;
+  }
+  .tab {
+    flex: 0 0 auto;
+    padding-inline: 8px;
+  }
+  .process-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .free-filter-controls {
+    width: 72px;
+  }
+  .axis-y-label {
+    width: 12px;
+  }
 }
 
 /* Transport */
@@ -501,6 +586,7 @@ input[type="range"]::-webkit-slider-thumb {
 .modal {
   background: var(--bg);
   border: 2px solid var(--border-dark);
+  color: var(--text);
   padding: 16px 20px;
   max-width: 500px;
   font-size: 12px;

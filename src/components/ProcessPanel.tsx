@@ -59,20 +59,37 @@ export function ProcessPanel() {
             onChange={(v) => set({ harmonicsCount: Math.round(v) })} />
         </fieldset>
 
-        <fieldset className="process-box shift-box">
-          <label className="check-row" title="Shift the spectrum by musical cents.">
-            <input
-              title="Enable pitch shifting."
-              type="checkbox"
-              checked={p.pitchShiftEnabled}
-              onChange={(e) => set({ pitchShiftEnabled: e.target.checked })}
-            />
-            <span>Pitch Shift</span>
-          </label>
-          <NumberRow label="cents" value={p.pitchShiftCents} min={-3600} max={3600} step={1}
-            tooltip="Pitch shift amount in cents. 1200 cents equals one octave."
-            onChange={(v) => set({ pitchShiftCents: Math.round(v) })} />
-        </fieldset>
+        <div className="shift-stack">
+          <fieldset className="process-box shift-box">
+            <label className="check-row" title="Shift the spectrum by musical cents.">
+              <input
+                title="Enable pitch shifting."
+                type="checkbox"
+                checked={p.pitchShiftEnabled}
+                onChange={(e) => set({ pitchShiftEnabled: e.target.checked })}
+              />
+              <span>Pitch Shift</span>
+            </label>
+            <StepperNumberRow label="cents" value={p.pitchShiftCents} min={-3600} max={3600} step={1} coarseStep={100}
+              tooltip="Pitch shift amount in cents. 1200 cents equals one octave."
+              onChange={(v) => set({ pitchShiftCents: Math.round(v) })} />
+          </fieldset>
+
+          <fieldset className="process-box shift-box">
+            <label className="check-row" title="Shift the spectrum by a fixed frequency offset in Hz.">
+              <input
+                title="Enable frequency shifting."
+                type="checkbox"
+                checked={p.frequencyShiftEnabled}
+                onChange={(e) => set({ frequencyShiftEnabled: e.target.checked })}
+              />
+              <span>Freq Shift</span>
+            </label>
+            <StepperNumberRow label="Hz" value={p.frequencyShiftHz} min={-10000} max={10000} step={1} coarseStep={100}
+              tooltip="Frequency shift amount in Hz. Unlike pitch shift, this moves every bin by the same Hz offset."
+              onChange={(v) => set({ frequencyShiftHz: Math.round(v) })} />
+          </fieldset>
+        </div>
 
         <fieldset className="process-box octave-box">
           <label className="check-row" title="Blend octave-shifted copies of the spectrum.">
@@ -105,21 +122,6 @@ export function ProcessPanel() {
           </div>
         </fieldset>
 
-        <fieldset className="process-box shift-box">
-          <label className="check-row" title="Shift the spectrum by a fixed frequency offset in Hz.">
-            <input
-              title="Enable frequency shifting."
-              type="checkbox"
-              checked={p.frequencyShiftEnabled}
-              onChange={(e) => set({ frequencyShiftEnabled: e.target.checked })}
-            />
-            <span>Freq Shift</span>
-          </label>
-          <NumberRow label="Hz" value={p.frequencyShiftHz} min={-10000} max={10000} step={1}
-            tooltip="Frequency shift amount in Hz. Unlike pitch shift, this moves every bin by the same Hz offset."
-            onChange={(v) => set({ frequencyShiftHz: Math.round(v) })} />
-        </fieldset>
-
         <fieldset className="process-box filter-box">
           <label className="check-row" title="Keep or remove a frequency band after stretching.">
             <input
@@ -150,21 +152,6 @@ export function ProcessPanel() {
             onChange={(v) => set({ filterHighDamp: v })} />
         </fieldset>
 
-        <fieldset className="process-box small-box">
-          <label className="check-row" title="Normalize spectral energy using the original compressor curve.">
-            <input
-              title="Enable spectral compressor."
-              type="checkbox"
-              checked={p.compressorEnabled}
-              onChange={(e) => set({ compressorEnabled: e.target.checked })}
-            />
-            <span>Compress</span>
-          </label>
-          <SliderRow label="Power" value={p.compressorPower} min={0} max={1}
-            tooltip="Compression strength. Higher values raise quiet spectra and restrain loud spectra more."
-            onChange={(v) => set({ compressorPower: v })} />
-        </fieldset>
-
         <fieldset className="process-box tonal-box">
           <label className="check-row" title="Emphasize tonal partials or noisy broadband content.">
             <input
@@ -183,20 +170,37 @@ export function ProcessPanel() {
             onChange={(v) => set({ tonalNoiseBandwidth: v })} />
         </fieldset>
 
-        <fieldset className="process-box spread-box">
-          <label className="check-row" title="Widen harmonic peaks by smoothing the log-frequency spectrum.">
-            <input
-              title="Enable frequency spread."
-              type="checkbox"
-              checked={p.spreadEnabled}
-              onChange={(e) => set({ spreadEnabled: e.target.checked })}
-            />
-            <span>Spread</span>
-          </label>
-          <SliderRow label="Bandwidth" value={p.spreadBandwidth} min={0} max={1}
-            tooltip="Amount of log-frequency spreading applied to spectral peaks."
-            onChange={(v) => set({ spreadBandwidth: v })} />
-        </fieldset>
+        <div className="utility-stack">
+          <fieldset className="process-box small-box">
+            <label className="check-row" title="Normalize spectral energy using the original compressor curve.">
+              <input
+                title="Enable spectral compressor."
+                type="checkbox"
+                checked={p.compressorEnabled}
+                onChange={(e) => set({ compressorEnabled: e.target.checked })}
+              />
+              <span>Compress</span>
+            </label>
+            <SliderRow label="Power" value={p.compressorPower} min={0} max={1}
+              tooltip="Compression strength. Higher values raise quiet spectra and restrain loud spectra more."
+              onChange={(v) => set({ compressorPower: v })} />
+          </fieldset>
+
+          <fieldset className="process-box spread-box">
+            <label className="check-row" title="Widen harmonic peaks by smoothing the log-frequency spectrum.">
+              <input
+                title="Enable frequency spread."
+                type="checkbox"
+                checked={p.spreadEnabled}
+                onChange={(e) => set({ spreadEnabled: e.target.checked })}
+              />
+              <span>Spread</span>
+            </label>
+            <SliderRow label="Bandwidth" value={p.spreadBandwidth} min={0} max={1}
+              tooltip="Amount of log-frequency spreading applied to spectral peaks."
+              onChange={(v) => set({ spreadBandwidth: v })} />
+          </fieldset>
+        </div>
       </div>
 
       <fieldset className="process-box arbitrary-box">
@@ -240,6 +244,45 @@ function NumberRow(props: {
         }}
       />
     </label>
+  );
+}
+
+function StepperNumberRow(props: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  coarseStep: number;
+  tooltip: string;
+  onChange: (value: number) => void;
+}) {
+  const setClamped = (value: number) => {
+    props.onChange(Math.max(props.min, Math.min(props.max, value)));
+  };
+
+  return (
+    <div className="stepper-number-row" title={props.tooltip}>
+      <span>{props.label}</span>
+      <input
+        title={props.tooltip}
+        type="number"
+        min={props.min}
+        max={props.max}
+        step={props.step}
+        value={formatInputValue(props.value)}
+        onChange={(e) => {
+          const v = parseFloat(e.target.value);
+          if (Number.isFinite(v)) setClamped(v);
+        }}
+      />
+      <div className="stepper-buttons">
+        <button type="button" title={`Decrease by ${props.coarseStep} ${props.label}`} onClick={() => setClamped(props.value - props.coarseStep)}>-{props.coarseStep}</button>
+        <button type="button" title={`Decrease by ${props.step} ${props.label}`} onClick={() => setClamped(props.value - props.step)}>-{props.step}</button>
+        <button type="button" title={`Increase by ${props.step} ${props.label}`} onClick={() => setClamped(props.value + props.step)}>+{props.step}</button>
+        <button type="button" title={`Increase by ${props.coarseStep} ${props.label}`} onClick={() => setClamped(props.value + props.coarseStep)}>+{props.coarseStep}</button>
+      </div>
+    </div>
   );
 }
 
