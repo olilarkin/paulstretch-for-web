@@ -6,6 +6,7 @@ import { Tabs } from './components/Tabs';
 import { ParametersPanel } from './components/ParametersPanel';
 import { ProcessPanel } from './components/ProcessPanel';
 import { BinauralPanel } from './components/BinauralPanel';
+import { WriteToFilePanel } from './components/WriteToFilePanel';
 import { TransportBar } from './components/TransportBar';
 import { StreamingEngine } from './audio/streaming/engine';
 import { syncEngineFromStore } from './audio/streaming/sync';
@@ -217,7 +218,7 @@ export function App() {
         {activeTab === 'Parameters' && <ParametersPanel />}
         {activeTab === 'Process' && <ProcessPanel />}
         {activeTab === 'Binaural beats' && <BinauralPanel />}
-        {activeTab === 'Write to file' && <ParametersPanel />}
+        {activeTab === 'Write to file' && <WriteToFilePanel />}
       </div>
       <TransportBar engineRef={engineRef} />
     </div>

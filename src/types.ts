@@ -106,31 +106,3 @@ export interface AudioSource {
   channels: Float32Array[]; // 1 (mono) or 2 (stereo)
 }
 
-export interface RenderJob {
-  jobId: number;
-  sampleRate: number;
-  channels: Float32Array[]; // mono or stereo
-  stretch: number;
-  fftSize: number;
-  windowType: WindowType;
-  onsetSensitivity: number;
-  envelope: {
-    positions: Float32Array;
-    values: Float32Array;
-  } | null;
-}
-
-export interface RenderResult {
-  jobId: number;
-  channels: Float32Array[]; // matches input channel count
-  sampleRate: number;
-}
-
-export type WorkerInbound =
-  | { type: 'init' }
-  | ({ type: 'render' } & RenderJob);
-
-export type WorkerOutbound =
-  | { type: 'ready'; backend: string; simdArch: string; simdSize: number }
-  | { type: 'rendered'; result: RenderResult }
-  | { type: 'error'; jobId?: number; message: string };

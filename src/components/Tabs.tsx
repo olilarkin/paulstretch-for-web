@@ -13,8 +13,6 @@ export function Tabs() {
         <button
           key={tab}
           className={'tab' + (activeTab === tab ? ' active' : '')}
-          disabled={tab === 'Write to file'}
-          title={tab === 'Write to file' ? 'Not available' : undefined}
           onClick={() => setActiveTab(tab)}
         >
           {tab}
