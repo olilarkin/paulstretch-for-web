@@ -130,6 +130,7 @@ export class StreamingEngine {
   isReady(): boolean { return this.ready; }
   isPlaying(): boolean { return this.playing; }
   audioContext(): AudioContext { return this.ctx; }
+  outputNode(): AudioWorkletNode { return this.node; }
 
   loadSource(source: AudioSource): void {
     const channels = source.channels.map((c) => new Float32Array(c));

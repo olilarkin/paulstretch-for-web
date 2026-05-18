@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { useStore } from '../state/store';
 import type { CurvePoint } from '../types';
+import type { StreamingEngine } from '../audio/streaming/engine';
 import { densifyLogValuesWithBreakpoints } from './EnvelopeEditor/interpolation';
 
 const W = 760;
@@ -11,8 +12,14 @@ const FILTER_MIN_HZ = 20;
 const FILTER_MAX_HZ = 25000;
 const FILTER_MIN_DB = -60;
 const FILTER_MAX_DB = 20;
+const ANALYZER_MIN_DB = -90;
+const ANALYZER_MAX_DB = 20;
 
-export function ProcessPanel() {
+interface ProcessPanelProps {
+  engineRef: RefObject<StreamingEngine | null>;
+}
+
+export function ProcessPanel({ engineRef }: ProcessPanelProps) {
   const p = useStore((s) => s.processParams);
   const set = useStore((s) => s.setProcessParams);
   const setArbitraryFilterEnabled = useStore((s) => s.setArbitraryFilterEnabled);
@@ -213,7 +220,7 @@ export function ProcessPanel() {
           />
           <span>ArbitraryFilter</span>
         </label>
-        <ArbitraryFilterEditor />
+        <ArbitraryFilterEditor engineRef={engineRef} />
       </fieldset>
     </div>
   );
@@ -311,15 +318,115 @@ function SliderRow(props: {
   );
 }
 
-function ArbitraryFilterEditor() {
+function ArbitraryFilterEditor({ engineRef }: { engineRef: RefObject<StreamingEngine | null> }) {
   const filter = useStore((s) => s.processParams.arbitraryFilter);
   const setPoints = useStore((s) => s.setArbitraryFilterPoints);
   const selectPoint = useStore((s) => s.selectArbitraryFilterPoint);
   const clear = useStore((s) => s.clearArbitraryFilter);
   const svgRef = useRef<SVGSVGElement>(null);
+  const spectrumPathRef = useRef<SVGPathElement>(null);
+  const peakPathRef = useRef<SVGPathElement>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: W, height: H });
   const curve = useMemo(() => densifyLogValuesWithBreakpoints(filter, 256), [filter]);
+  const engineState = useStore((s) => s.engineState);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (engineState !== 'ready' && engineState !== 'playing') return;
+    const ctx = engine.audioContext();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.6;
+    try {
+      engine.outputNode().connect(analyser);
+    } catch {
+      return;
+    }
+    const bins = analyser.frequencyBinCount;
+    const data = new Float32Array(bins);
+    const sampleRate = ctx.sampleRate;
+    const logMin = Math.log(FILTER_MIN_HZ);
+    const logMax = Math.log(FILTER_MAX_HZ);
+    const dbRange = ANALYZER_MAX_DB - ANALYZER_MIN_DB;
+    const NUM_BARS = 56;
+    const plotW = W - 2 * PAD;
+    const plotH = H - 2 * PAD;
+    const slotW = plotW / NUM_BARS;
+    const gap = Math.max(0.4, slotW * 0.18);
+    const barW = slotW - gap;
+    const baseY = H - PAD;
+    // Precompute band edge bin indices (log-spaced).
+    const bandLo = new Int32Array(NUM_BARS);
+    const bandHi = new Int32Array(NUM_BARS);
+    for (let b = 0; b < NUM_BARS; b++) {
+      const t0 = b / NUM_BARS;
+      const t1 = (b + 1) / NUM_BARS;
+      const f0 = Math.exp(logMin + t0 * (logMax - logMin));
+      const f1 = Math.exp(logMin + t1 * (logMax - logMin));
+      const k0 = Math.floor((f0 * analyser.fftSize) / sampleRate);
+      const k1 = Math.ceil((f1 * analyser.fftSize) / sampleRate);
+      bandLo[b] = Math.max(0, Math.min(bins - 1, k0));
+      bandHi[b] = Math.max(bandLo[b], Math.min(bins - 1, k1));
+    }
+    const peakDb = new Float32Array(NUM_BARS);
+    peakDb.fill(ANALYZER_MIN_DB);
+    const holdUntil = new Float64Array(NUM_BARS);
+    const HOLD_MS = 800;
+    const DECAY_DB_PER_SEC = 24;
+    const PEAK_TICK_H = 2; // SVG units
+    let raf = 0;
+    let lastT = performance.now();
+    const tick = () => {
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - lastT) / 1000);
+      lastT = now;
+      analyser.getFloatFrequencyData(data);
+      const path = spectrumPathRef.current;
+      const peakPath = peakPathRef.current;
+      let d = '';
+      let pd = '';
+      for (let b = 0; b < NUM_BARS; b++) {
+        let dbMax = -Infinity;
+        for (let k = bandLo[b]; k <= bandHi[b]; k++) {
+          const v = data[k];
+          if (v > dbMax) dbMax = v;
+        }
+        if (!Number.isFinite(dbMax)) dbMax = ANALYZER_MIN_DB;
+        // Peak-hold with hysteresis: instant attack, hold timer, then decay.
+        if (dbMax > peakDb[b]) {
+          peakDb[b] = dbMax;
+          holdUntil[b] = now + HOLD_MS;
+        } else if (now > holdUntil[b]) {
+          peakDb[b] -= DECAY_DB_PER_SEC * dt;
+          if (peakDb[b] < ANALYZER_MIN_DB) peakDb[b] = ANALYZER_MIN_DB;
+        }
+        const clamped = Math.max(ANALYZER_MIN_DB, Math.min(ANALYZER_MAX_DB, dbMax));
+        const yNorm = (ANALYZER_MAX_DB - clamped) / dbRange;
+        const top = PAD + yNorm * plotH;
+        const x = PAD + b * slotW + gap * 0.5;
+        if (top < baseY) {
+          d += `M${x.toFixed(2)},${top.toFixed(2)}h${barW.toFixed(2)}V${baseY.toFixed(2)}h${(-barW).toFixed(2)}Z`;
+        }
+        // Peak tick.
+        const pkClamped = Math.max(ANALYZER_MIN_DB, Math.min(ANALYZER_MAX_DB, peakDb[b]));
+        const pkNorm = (ANALYZER_MAX_DB - pkClamped) / dbRange;
+        const pkY = PAD + pkNorm * plotH;
+        if (pkY < baseY) {
+          pd += `M${x.toFixed(2)},${pkY.toFixed(2)}h${barW.toFixed(2)}v${PEAK_TICK_H}h${(-barW).toFixed(2)}Z`;
+        }
+      }
+      if (path) path.setAttribute('d', d);
+      if (peakPath) peakPath.setAttribute('d', pd);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      try { engine.outputNode().disconnect(analyser); } catch { /* ignore */ }
+    };
+  }, [engineRef, engineState]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -441,13 +548,15 @@ function ArbitraryFilterEditor() {
               onContextMenu={(e) => e.preventDefault()}
             >
               <title>Draw the arbitrary filter curve. X is log frequency from 20 Hz to 25 kHz; Y is gain from -60 dB to +20 dB.</title>
-              <rect x={0} y={0} width={W} height={H} fill="#ffffff" stroke="#777" vectorEffect="non-scaling-stroke" />
+              <rect x={0} y={0} width={W} height={H} fill="#ededed" stroke="#777" vectorEffect="non-scaling-stroke" />
               {grid.map((g) => (
                 <line key={'v' + g} x1={xToScreen(g)} y1={PAD} x2={xToScreen(g)} y2={H - PAD} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
               ))}
               {grid.map((g) => (
                 <line key={'h' + g} x1={PAD} y1={PAD + g * (H - 2 * PAD)} x2={W - PAD} y2={PAD + g * (H - 2 * PAD)} stroke="#e2e2e2" vectorEffect="non-scaling-stroke" />
               ))}
+              <path ref={spectrumPathRef} d="" fill="#dcdcdc" stroke="none" pointerEvents="none" />
+              <path ref={peakPathRef} d="" fill="#bcbcbc" stroke="none" pointerEvents="none" />
               <path d={pathD} fill="none" stroke="#000" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
               {filter.points.map((point, i) => (
                 <ellipse

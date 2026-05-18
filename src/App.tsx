@@ -216,7 +216,7 @@ export function App() {
       <Tabs />
       <div className="panel">
         {activeTab === 'Parameters' && <ParametersPanel />}
-        {activeTab === 'Process' && <ProcessPanel />}
+        {activeTab === 'Process' && <ProcessPanel engineRef={engineRef} />}
         {activeTab === 'Binaural beats' && <BinauralPanel />}
         {activeTab === 'Write to file' && <WriteToFilePanel />}
       </div>
