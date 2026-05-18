@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { useStore } from '../state/store';
 import { sliderToStretch } from '../state/mappings';
 import type { StreamingEngine } from '../audio/streaming/engine';
@@ -49,12 +49,36 @@ export function TransportBar({ engineRef }: Props) {
     engineRef.current?.seek(f);
   };
 
+  // Spacebar toggles play/pause, unless typing in a form control.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
+      }
+      if (!source) return;
+      e.preventDefault();
+      if (playing) {
+        handlePause();
+      } else if (ready) {
+        void handlePlay();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, ready, source]);
+
   return (
     <div className="transport">
       <div className="transport-buttons">
-        <button onClick={handlePlay} disabled={!canPlay} title="Play">▶</button>
-        <button onClick={handlePause} disabled={!canPause} title="Pause">❚❚</button>
-        <button onClick={handleStop} disabled={!canStop} title="Stop">■</button>
+        <button onClick={handlePlay} disabled={!canPlay} title="Play (Space)">▶</button>
+        <button onClick={handlePause} disabled={!canPause} title="Pause (Space)">❚❚</button>
+        <button onClick={handleStop} disabled={!canStop} title="Stop" className="stop-btn" aria-label="Stop">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1.5" width="7" height="7" fill="currentColor" /></svg>
+        </button>
       </div>
       <div className="position-readout">{(frac * 100).toFixed(2)}</div>
       <input

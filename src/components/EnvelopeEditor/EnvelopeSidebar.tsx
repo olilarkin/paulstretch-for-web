@@ -33,8 +33,13 @@ export function EnvelopeSidebar() {
         className={'enable-btn' + (envelope.enabled ? ' on' : '')}
         onClick={() => setEnvelopeEnabled(!envelope.enabled)}
         title="Enable a time-varying multiplier for the Stretch slider."
+        aria-pressed={envelope.enabled}
       >
-        {envelope.enabled ? '■ Enabled' : '□ Enable'}
+        <span className="enable-led" aria-hidden="true" />
+        <span className="enable-label">
+          <span aria-hidden="true" className="ghost">Enabled</span>
+          <span>{envelope.enabled ? 'Enabled' : 'Enable'}</span>
+        </span>
       </button>
       <label title="Normalized input-time position for the selected stretch multiplier point.">
         Position

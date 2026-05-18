@@ -38,16 +38,21 @@ export function TitleBar({ onFile }: Props) {
       {aboutOpen && (
         <div className="modal-backdrop" onClick={() => setAboutOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Paul's Extreme Sound Stretch (Web)</h2>
+            <h2>Paulstretch2026:</h2>
+            <div className="modal-subtitle">Paul's Extreme Sound Stretch For Web</div>
+            <p>This is an experimental program for extreme stretching the audio.</p>
             <p>
-              A browser port of <a href="https://hypermammut.sourceforge.net/paulstretch/" target="_blank" rel="noreferrer">Paulstretch</a> by Nasca Octavian Paul,
-              built on <code>libpaulstretch</code> by Oli Larkin.
+              A browser port of{' '}
+              <a href="https://hypermammut.sourceforge.net/paulstretch/" target="_blank" rel="noreferrer">Paulstretch</a>{' '}
+              by Nasca Octavian Paul, built on <code>libpaulstretch</code> by Oli Larkin.
             </p>
             <p>
-              Drop in an audio file via <strong>File</strong>, adjust the stretch / window /
-              onset parameters, and shape the time-varying stretch with the breakpoint
-              envelope.
+              Source:{' '}
+              <a href="https://github.com/olilarkin/paulstretch2026" target="_blank" rel="noreferrer">
+                github.com/olilarkin/paulstretch2026
+              </a>
             </p>
+            <p>License: GPL v2.0</p>
             <button onClick={() => setAboutOpen(false)}>Close</button>
           </div>
         </div>
