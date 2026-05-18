@@ -26,10 +26,18 @@ type ReadyListener = (info: { backend: string; simdArch: string; simdSize: numbe
 const RING_CAPACITY_FRAMES = 96000;
 const RING_CHANNELS = 2;
 
+// 10ms is below the perceptual threshold for "instant" but enough to avoid
+// a click when the gain step lands mid-cycle. The ring keeps draining
+// underneath, but the user hears silence.
+const MUTE_RAMP_SEC = 0.010;
+
 export class StreamingEngine {
   private readonly ctx: AudioContext;
   private readonly worker: Worker;
   private readonly node: AudioWorkletNode;
+  // Output gain sits between the worklet and the destination so we can mute
+  // instantly on pause/stop without waiting for the SAB ring to drain.
+  private readonly gain: GainNode;
   private ready = false;
   private readyInfo: { backend: string; simdArch: string; simdSize: number } | null = null;
   private playing = false;
@@ -43,6 +51,13 @@ export class StreamingEngine {
     this.ctx = ctx;
     this.worker = worker;
     this.node = node;
+    this.gain = ctx.createGain();
+    this.gain.gain.value = 1;
+    // node→gain→destination — the `create()` static used to connect node
+    // directly to destination; we re-route it here.
+    try { node.disconnect(); } catch { /* not yet connected */ }
+    node.connect(this.gain);
+    this.gain.connect(ctx.destination);
 
     this.worker.onmessage = (e: MessageEvent<WorkerToMain>) => {
       const m = e.data;
@@ -80,7 +95,8 @@ export class StreamingEngine {
       numberOfOutputs: 1,
       outputChannelCount: [RING_CHANNELS],
     });
-    node.connect(ctx.destination);
+    // The constructor wires node → gain → destination so we can mute
+    // independently of the SAB drain. Don't connect directly here.
 
     const worker = new Worker(
       new URL('./stream-worker.ts', import.meta.url),
@@ -130,7 +146,21 @@ export class StreamingEngine {
   isReady(): boolean { return this.ready; }
   isPlaying(): boolean { return this.playing; }
   audioContext(): AudioContext { return this.ctx; }
-  outputNode(): AudioWorkletNode { return this.node; }
+  // Returns the post-mute tap point — what the user actually hears. The
+  // spectrum analyser hooks into this so the visual matches the audible
+  // signal when paused/stopped.
+  outputNode(): AudioNode { return this.gain; }
+
+  private rampGainTo(target: number, durationSec: number = MUTE_RAMP_SEC): void {
+    const param = this.gain.gain;
+    const now = this.ctx.currentTime;
+    // Cancel any in-flight ramp and pin to the actual current value before
+    // scheduling the new one. Without this, a rapid pause→play→pause sees
+    // the new ramp start from a stale automation value.
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(target, now + durationSec);
+  }
 
   loadSource(source: AudioSource): void {
     const channels = source.channels.map((c) => new Float32Array(c));
@@ -222,16 +252,21 @@ export class StreamingEngine {
 
   async play(): Promise<void> {
     if (this.ctx.state === 'suspended') await this.ctx.resume();
+    this.rampGainTo(1);
     this.send({ type: 'play' });
     this.playing = true;
   }
 
   pause(): void {
+    // Ramp gain BEFORE telling the worker — the audible response should be
+    // immediate, not gated on the worker thread reading the message.
+    this.rampGainTo(0);
     this.send({ type: 'pause' });
     this.playing = false;
   }
 
   stop(): void {
+    this.rampGainTo(0);
     this.send({ type: 'stop' });
     this.playing = false;
   }
@@ -247,6 +282,7 @@ export class StreamingEngine {
   destroy(): void {
     this.send({ type: 'shutdown' });
     try { this.node.disconnect(); } catch { /* ignore */ }
+    try { this.gain.disconnect(); } catch { /* ignore */ }
     try { this.worker.terminate(); } catch { /* ignore */ }
   }
 }

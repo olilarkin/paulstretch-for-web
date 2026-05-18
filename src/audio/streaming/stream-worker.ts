@@ -94,6 +94,15 @@ const state = {
   pendingOffset: 0,
   pumpTimer: 0 as number | ReturnType<typeof setTimeout>,
   positionTimer: 0 as number | ReturnType<typeof setInterval>,
+  // Source/output frame counts captured at the last ring reset (stop, seek,
+  // source change). Used to derive the *consumer-side* source cursor — i.e.
+  // the source position the user is actually hearing, accounting for the
+  // SAB ring's buffered-ahead audio.
+  resetSourceBase: 0,
+  resetOutputBase: 0,
+  // Last cursor value reported to the UI. Frozen while paused so the
+  // playhead doesn't drift as the worklet silently drains the ring tail.
+  lastReportedCursor: 0,
 };
 
 function post(msg: WorkerToMain, transfer?: Transferable[]): void {
@@ -242,6 +251,13 @@ function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' |
       state.cursor = 0;
       state.firstStep = true;
       clearPendingOutput();
+      // Drop the buffered tail of the previous iteration. Without this, the
+      // consumer keeps draining pre-wrap audio for up to ~2s while
+      // state.cursor is already at 0, which de-syncs the reported playhead
+      // from what the user hears. The cost is a small audible glitch at
+      // the loop boundary — acceptable for a preview UI.
+      if (state.ring) ringReset(state.ring);
+      captureResetBases();
       return 'wrote'; // try again on rewound source
     }
     state.running = false;
@@ -318,17 +334,63 @@ function kickPumpSoon() {
   state.pumpTimer = setTimeout(pumpLoop, 0);
 }
 
+// Returns the source-frame position the user is currently hearing. The
+// worker's state.cursor is the *producer* position — it has already advanced
+// state.cursor by the time the corresponding output frames are written into
+// the ring. The consumer (worklet) drains those frames later, so what the
+// user hears trails behind by `(WRITE_POS - READ_POS)` output frames.
+//
+// We don't track the instantaneous stretch ratio explicitly; instead we
+// derive an average ratio from cumulative production stats since the last
+// ring reset (start / seek / stop). This is robust to envelope-driven
+// stretch changes since it always uses the current average up to "now".
+function computeConsumerSourceCursor(): number {
+  if (!state.ring || !state.source) return state.cursor;
+  const writePos = Atomics.load(state.ring.control, /* WRITE_POS */ 1);
+  const readPos  = Atomics.load(state.ring.control, /* READ_POS  */ 0);
+  const outputsProduced = writePos - state.resetOutputBase;
+  const sourcesConsumed = state.cursor - state.resetSourceBase;
+  if (outputsProduced <= 256 || sourcesConsumed <= 0) {
+    // Not enough data yet — priming phase or just-after-reset. The ring's
+    // first ~256 output frames precede a stable ratio; reporting producer
+    // cursor for that brief window is more accurate than dividing by ~0.
+    return state.cursor;
+  }
+  const ringAheadOutputs = Math.max(0, writePos - readPos);
+  const outputsPerSource = outputsProduced / sourcesConsumed;
+  const sourceFramesAhead = ringAheadOutputs / outputsPerSource;
+  const heard = state.cursor - sourceFramesAhead;
+  return Math.max(state.resetSourceBase, Math.min(state.source.totalFrames, heard));
+}
+
 function startPositionReports() {
   stopPositionReports();
   state.positionTimer = setInterval(() => {
     if (!state.source) return;
+    if (state.running) {
+      state.lastReportedCursor = computeConsumerSourceCursor();
+    }
+    // While paused/stopped, hold the last cursor so the UI doesn't drift as
+    // the worklet keeps consuming the buffered tail (which we've already
+    // muted via the engine's GainNode).
     post({
       type: 'position',
-      cursor: state.cursor,
+      cursor: state.lastReportedCursor,
       totalFrames: state.source.totalFrames,
       running: state.running,
     });
-  }, 100);
+  }, 50);
+}
+
+// Pin the source/output reference points to "right now" so the next round of
+// production/consumption stats is measured from a clean baseline. Must be
+// called whenever we ringReset (or otherwise discontinuously change cursor).
+function captureResetBases(): void {
+  state.resetSourceBase = state.cursor;
+  state.resetOutputBase = state.ring
+    ? Atomics.load(state.ring.control, /* WRITE_POS */ 1)
+    : 0;
+  state.lastReportedCursor = state.cursor;
 }
 
 function stopPositionReports() {
@@ -366,6 +428,7 @@ async function handleMain(msg: MainToWorker) {
       if (state.config) rebuildStretchers();
       state.binauralProcessor?.reset();
       if (state.ring) ringReset(state.ring);
+      captureResetBases();
       return;
     }
     if (msg.type === 'params') {
@@ -443,6 +506,7 @@ async function handleMain(msg: MainToWorker) {
       for (const s of state.stretchers) s.reset();
       state.binauralProcessor?.reset();
       if (state.ring) ringReset(state.ring);
+      captureResetBases();
       return;
     }
     if (msg.type === 'seek') {
@@ -459,6 +523,7 @@ async function handleMain(msg: MainToWorker) {
         }
       }
       if (state.ring) ringReset(state.ring);
+      captureResetBases();
       if (state.running) kickPumpSoon();
       return;
     }
