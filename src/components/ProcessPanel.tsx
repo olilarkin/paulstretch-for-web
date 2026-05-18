@@ -421,14 +421,14 @@ function ArbitraryFilterEditor() {
         >
           Flat
         </button>
-        <div className="filter-y-scale">
-          <span>{formatDb(FILTER_MAX_DB)}</span>
-          <span>{formatDb(FILTER_MIN_DB)}</span>
-        </div>
       </div>
       <div className="free-filter-plot">
         <div className="graph-with-y-axis free-filter-graph">
           <div className="axis-y-label">Gain (dB)</div>
+          <div className="filter-y-scale">
+            <span>{formatDb(FILTER_MAX_DB)}</span>
+            <span>{formatDb(FILTER_MIN_DB)}</span>
+          </div>
           <div className="graph-main">
             <svg
               ref={svgRef}

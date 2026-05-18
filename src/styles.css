@@ -106,9 +106,26 @@ body {
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: auto;
+  container-type: size;
+}
+
+/* Hide axis chrome when the panel doesn't have room for it. */
+@container (max-height: 300px) {
+  .axis-x-label,
+  .axis-y-label,
+  .filter-x-scale,
+  .filter-y-scale {
+    display: none;
+  }
 }
 
 /* Parameter rows */
+.parameters-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
 .parameters-panel hr {
   border: none;
   border-top: 1px solid var(--border);
@@ -168,10 +185,18 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Envelope editor */
+.envelope-wrap {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  flex: 1;
+  min-height: 0;
+}
 .envelope-container {
   display: flex;
   gap: 6px;
-  margin-top: 4px;
+  flex: 1;
+  min-height: 0;
 }
 .graph-with-y-axis {
   display: flex;
@@ -213,6 +238,8 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   padding: 4px;
+  min-height: 0;
+  overflow: auto;
 }
 .envelope-sidebar label {
   display: flex;
@@ -249,12 +276,18 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
   margin-top: 4px;
 }
+.envelope-graph .graph-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .envelope-canvas {
   display: block;
   width: 100%;
   background: white;
   border: 1px solid var(--border);
-  height: 240px;
+  flex: 1;
+  min-height: 0;
   touch-action: none;
   user-select: none;
 }
@@ -428,17 +461,19 @@ input[type="range"]::-webkit-slider-thumb {
   min-height: 0;
 }
 .free-filter-controls {
-  width: 84px;
+  width: 64px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
 }
 .filter-y-scale {
   display: flex;
   flex-direction: column;
-  gap: 118px;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 2px 0;
   font-family: Menlo, monospace;
   font-size: 10px;
+  line-height: 1;
 }
 .free-filter-plot {
   display: flex;
@@ -457,7 +492,7 @@ input[type="range"]::-webkit-slider-thumb {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 180px;
+  min-height: 0;
   background: white;
   border: 1px solid var(--border);
   touch-action: none;
@@ -471,16 +506,34 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 10px;
   padding: 2px 2px 0;
 }
+.binaural-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
 .binaural-box {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .binaural-graph {
   margin-top: 8px;
+  flex: 1;
+  min-height: 0;
+}
+.binaural-graph .graph-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .binaural-canvas {
   display: block;
   width: 100%;
-  height: 260px;
+  flex: 1;
+  min-height: 0;
   background: white;
   border: 1px solid var(--border);
   touch-action: none;
@@ -509,10 +562,35 @@ input[type="range"]::-webkit-slider-thumb {
     grid-template-columns: minmax(0, 1fr);
   }
   .free-filter-controls {
-    width: 72px;
+    width: 48px;
   }
   .axis-y-label {
     width: 12px;
+  }
+  /* Cap number-input widths so they don't stretch across the whole box. */
+  .number-row,
+  .stepper-number-row {
+    grid-template-columns: minmax(58px, auto) minmax(0, 160px);
+  }
+  .shift-box .number-row {
+    grid-template-columns: minmax(44px, auto) minmax(0, 160px);
+  }
+  /* Octave Mixer: spread sliders across the full box width. */
+  .octave-sliders {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    justify-content: stretch;
+    height: 96px;
+  }
+  .octave-sliders .octave-slider input[type="range"] {
+    height: 72px;
+  }
+  /* Give the arbitrary filter graph a usable minimum height in narrow mode,
+     where flex:1 has no determinate parent height to expand into. */
+  .free-filter-canvas {
+    min-height: 160px;
+  }
+  .arbitrary-box {
+    flex: 0 0 auto;
   }
 }
 

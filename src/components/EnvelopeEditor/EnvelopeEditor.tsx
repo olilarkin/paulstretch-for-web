@@ -142,12 +142,13 @@ export function EnvelopeEditor() {
   const handleRy = HANDLE_RADIUS_PX * (H / canvasSize.height);
 
   return (
-    <div className="envelope-container">
-      <EnvelopeSidebar />
-      <div className="graph-with-y-axis envelope-graph">
-        <div className="axis-y-label">Multiplier</div>
-        <div className="graph-main">
-          <svg
+    <div className="envelope-wrap">
+      <div className="envelope-container">
+        <EnvelopeSidebar />
+        <div className="graph-with-y-axis envelope-graph">
+          <div className="axis-y-label">Multiplier</div>
+          <div className="graph-main">
+            <svg
             ref={svgRef}
             className={'envelope-canvas' + (disabled ? ' disabled' : '')}
             viewBox={`0 0 ${W} ${H}`}
@@ -191,9 +192,10 @@ export function EnvelopeEditor() {
               );
             })}
           </svg>
-          <div className="axis-x-label">Input position</div>
+          </div>
         </div>
       </div>
+      <div className="axis-x-label envelope-x-axis">Input position</div>
     </div>
   );
 }
