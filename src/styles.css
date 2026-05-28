@@ -211,6 +211,18 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--bg-panel);
   border: 1px solid var(--border-dark);
 }
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #999;
+  border: 1px solid var(--border-dark);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 16px;
+  border-radius: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dark);
+}
 
 /* Envelope editor */
 .envelope-wrap {
@@ -500,6 +512,14 @@ input[type="range"]::-webkit-slider-thumb {
   direction: rtl;
   width: 16px;
   height: 48px;
+}
+.octave-slider input[type="range"]::-moz-range-track {
+  width: 4px;
+  height: auto;
+}
+.octave-slider input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 12px;
 }
 .arbitrary-box {
   flex: 1;
