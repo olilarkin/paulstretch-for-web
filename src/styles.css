@@ -757,7 +757,8 @@ input[type="range"]::-moz-range-thumb {
 .modal { font-weight: normal; }
 .modal p, .modal a, .modal code, .modal strong { font-weight: normal; }
 .modal h2 { margin-top: 0; margin-bottom: 2px; font-size: 14px; font-weight: bold; }
-.modal-subtitle { margin-bottom: 10px; font-size: 12px; font-weight: normal; }
+.modal-subtitle { margin-bottom: 2px; font-size: 12px; font-weight: normal; }
+.modal-version { margin-top: 0; margin-bottom: 12px; color: var(--text-muted, #777); }
 .modal button {
   margin-top: 12px;
   padding: 4px 12px;

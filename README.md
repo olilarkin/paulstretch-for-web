@@ -1,8 +1,8 @@
-# Paul's Extreme Sound Stretch (Web)
+# Paulstretch For Web
 
 A browser port of [Paulstretch](https://hypermammut.sourceforge.net/paulstretch/) by Nasca Octavian Paul. This version runs entirely in the browser, streams the stretched output in real time through an `AudioWorklet`, and exposes the full processing chain of the original (spectral filter, harmonics, octave mixer, pitch/frequency shift, tonal–noise separation, compressor, spread, free-form EQ curve, binaural beats).
 
-Live build: <https://olilarkin.github.io/paulstretch2026/>
+Live build: <https://olilarkin.github.io/paulstretch-for-web/>
 
 ![Parameters tab with the stretch-multiplier envelope](doc/screenshot-1.png)
 

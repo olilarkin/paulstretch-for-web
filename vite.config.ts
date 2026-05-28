@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import pkg from './package.json' with { type: 'json' };
 
 // SharedArrayBuffer (the streaming engine's audio ring) requires the page
 // to be cross-origin-isolated. COOP same-origin + COEP require-corp is the
@@ -11,10 +12,13 @@ const coopCoepHeaders = {
 
 // On GitHub Pages the site is served from /<repo>/, so assets need that prefix.
 // Locally and on previews we want '/'.
-const base = process.env.GITHUB_ACTIONS ? '/paulstretch2026/' : '/';
+const base = process.env.GITHUB_ACTIONS ? '/paulstretch-for-web/' : '/';
 
 export default defineConfig({
   base,
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [react()],
   worker: {
     format: 'es',
