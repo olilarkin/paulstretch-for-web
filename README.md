@@ -1,6 +1,6 @@
 # Paul's Extreme Sound Stretch (Web)
 
-A browser port of [Paulstretch](https://www.paulnasca.com/algorithms-created-by-me) — the extreme time-stretch effect Nasca Octavian Paul originally wrote for offline use. This version runs entirely in the browser, streams the stretched output in real time through an `AudioWorklet`, and exposes the full processing chain (spectral filter, harmonics, octave mixer, pitch/frequency shift, tonal–noise separation, compressor, spread, free-form EQ curve, binaural beats).
+A browser port of [Paulstretch](https://hypermammut.sourceforge.net/paulstretch/) by Nasca Octavian Paul. This version runs entirely in the browser, streams the stretched output in real time through an `AudioWorklet`, and exposes the full processing chain of the original (spectral filter, harmonics, octave mixer, pitch/frequency shift, tonal–noise separation, compressor, spread, free-form EQ curve, binaural beats).
 
 Live build: <https://olilarkin.github.io/paulstretch2026/>
 
