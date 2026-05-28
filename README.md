@@ -4,7 +4,9 @@ A browser port of [Paulstretch](https://www.paulnasca.com/algorithms-created-by-
 
 Live build: <https://olilarkin.github.io/paulstretch2026/>
 
-![screenshot placeholder](public/screenshot.png)
+![Parameters tab with the stretch-multiplier envelope](doc/screenshot-1.png)
+
+![Process tab with the octave mixer and arbitrary-filter EQ over the spectrum analyzer](doc/screenshot-2.png)
 
 ## Features
 
