@@ -36,7 +36,7 @@ npm run preview
 
 ### `@olilarkin/paulstretch-wasm`
 
-The DSP runs in a WebAssembly module published to GitHub Packages. `.npmrc` points `@olilarkin/*` at `npm.pkg.github.com`; `npm ci` needs a `GITHUB_TOKEN` (or `NODE_AUTH_TOKEN`) with `read:packages` scope in your environment to authenticate.
+The DSP runs in a WebAssembly module published to GitHub Packages. The module is built from [`olilarkin/libpaulstretch`](https://github.com/olilarkin/libpaulstretch), the C++ Paulstretch core compiled to WebAssembly with SIMD. `.npmrc` points `@olilarkin/*` at `npm.pkg.github.com`; `npm ci` needs a `GITHUB_TOKEN` (or `NODE_AUTH_TOKEN`) with `read:packages` scope in your environment to authenticate.
 
 ## Cross-origin isolation
 
@@ -70,7 +70,7 @@ src/
 
 - React + TypeScript + Vite
 - Zustand for state
-- [`@olilarkin/paulstretch-wasm`](https://github.com/olilarkin/paulstretch-wasm) — the C++ Paulstretch core compiled to WebAssembly with SIMD
+- [`@olilarkin/paulstretch-wasm`](https://github.com/olilarkin/libpaulstretch) — the C++ Paulstretch core ([`olilarkin/libpaulstretch`](https://github.com/olilarkin/libpaulstretch)) compiled to WebAssembly with SIMD
 - AudioWorklet + SharedArrayBuffer for glitch-free streaming
 
 ## Tests
