@@ -83,7 +83,7 @@ Vitest covers the ring buffer, sync glue, envelope interpolation, and file loade
 
 ## Credits
 
-- **Nasca Octavian Paul** — original Paulstretch algorithm.
+- **Nasca Octavian Paul** — original Paulstretch algorithm and app.
 - **Oli Larkin** — web port and UI.
 
 ## License
