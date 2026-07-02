@@ -30,7 +30,10 @@ export function TitleBar({ onFile }: Props) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="audio/*"
+          // Listing extensions explicitly (not just `audio/*`) is what lets
+          // iOS Safari surface .wav/.aif files in the Files picker — with a
+          // bare `audio/*` it greys them out or only offers the Music library.
+          accept=".wav,.wave,.aif,.aiff,.aifc,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac,.webm,audio/*"
           style={{ display: 'none' }}
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
