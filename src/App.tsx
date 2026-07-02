@@ -189,7 +189,12 @@ export function App() {
       setEngineState('loading');
       const e = await getEngine(sampleRate);
       attachEngine(e);
-      await resumeAudioContext(e.audioContext());
+      // Warm the context up, but DON'T await it: on iOS Safari resume() only
+      // settles inside a live user gesture, and the gesture is already spent by
+      // the awaits above, so awaiting here hangs forever and decode never runs.
+      // Decoding works fine on a suspended context, and play() re-resumes inside
+      // the play-button gesture.
+      void resumeAudioContext(e.audioContext()).catch(() => {});
       const src = await loadAudioFile(file, e.audioContext(), arrayBuffer);
       setSource(src);
     } catch (err) {
