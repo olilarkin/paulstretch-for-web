@@ -7,11 +7,40 @@ export function estimateWavPcm16Size(numFrames: number, numChannels: number): nu
 
 export const WAV_MAX_BYTES = 0xffffffff; // RIFF/WAVE chunk-size field is uint32.
 
+// The render must hold two single, contiguous allocations: each channel's
+// accumulation Float32Array (numFrames * 4 bytes) and the interleaved WAV
+// ArrayBuffer (numFrames * numChannels * 2 + 44). A single typed array / buffer
+// is capped near 2 GiB in most engines, so a render whose largest buffer would
+// exceed this can't complete regardless of the 4 GiB WAV limit. Conservative so
+// it holds across browsers.
+export const MAX_RENDER_ALLOC_BYTES = 2 * 1024 * 1024 * 1024 - 64 * 1024 * 1024; // ~1.94 GiB
+
+// Largest single contiguous allocation a render of this size needs.
+export function maxRenderAllocBytes(numFrames: number, numChannels: number): number {
+  const accumBytes = numFrames * 4; // per-channel Float32Array
+  return Math.max(accumBytes, estimateWavPcm16Size(numFrames, numChannels));
+}
+
+// Whether an output of this size can actually be rendered to a WAV file: it must
+// fit the WAV format's 4 GiB cap AND stay under the single-allocation ceiling.
+export function isRenderable(numFrames: number, numChannels: number): boolean {
+  if (!isFinite(numFrames) || numFrames < 0) return false;
+  return (
+    estimateWavPcm16Size(numFrames, numChannels) <= WAV_MAX_BYTES &&
+    maxRenderAllocBytes(numFrames, numChannels) <= MAX_RENDER_ALLOC_BYTES
+  );
+}
+
 function writeAscii(view: DataView, offset: number, s: string): void {
   for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
 }
 
-export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Blob {
+// Validate the channels, allocate the output buffer, and write the 44-byte
+// header. Shared by the sync and async encoders so the two can't drift.
+function prepareWavBuffer(
+  channels: Float32Array[],
+  sampleRate: number,
+): { buf: ArrayBuffer; view: DataView; numChannels: number; numFrames: number } {
   if (channels.length === 0) throw new Error('encodeWavPcm16: no channels');
   const numChannels = channels.length;
   const numFrames = channels[0].length;
@@ -46,8 +75,14 @@ export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Bl
   writeAscii(view, 36, 'data');
   view.setUint32(40, dataSize, true);
 
-  let offset = 44;
-  for (let i = 0; i < numFrames; i++) {
+  return { buf, view, numChannels, numFrames };
+}
+
+// Write interleaved PCM16 for frames [start, end) into `view` (header is 44 bytes).
+function writeSamples(view: DataView, channels: Float32Array[], start: number, end: number): void {
+  const numChannels = channels.length;
+  let offset = 44 + start * numChannels * 2;
+  for (let i = start; i < end; i++) {
     for (let c = 0; c < numChannels; c++) {
       let s = channels[c][i];
       if (s > 1) s = 1;
@@ -58,7 +93,43 @@ export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Bl
       offset += 2;
     }
   }
+}
 
+export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Blob {
+  const { buf, view, numFrames } = prepareWavBuffer(channels, sampleRate);
+  writeSamples(view, channels, 0, numFrames);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+export interface EncodeWavOptions {
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+  /** Frames written per event-loop slice; lower = smoother bar, higher = faster. */
+  framesPerYield?: number;
+}
+
+// Async, cancellable WAV encoder. Encoding a long file is an O(frames) loop that
+// would freeze the UI thread; this writes in slices and yields a macrotask
+// (setTimeout 0 — a microtask wouldn't let the browser paint) between them so a
+// progress bar can repaint and a cancel can land.
+export async function encodeWavPcm16Async(
+  channels: Float32Array[],
+  sampleRate: number,
+  opts: EncodeWavOptions = {},
+): Promise<Blob> {
+  const { onProgress, signal, framesPerYield = 1 << 20 } = opts;
+  const { buf, view, numFrames } = prepareWavBuffer(channels, sampleRate);
+  if (numFrames === 0) {
+    onProgress?.(1);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  for (let start = 0; start < numFrames; start += framesPerYield) {
+    if (signal?.aborted) throw new DOMException('Encode cancelled', 'AbortError');
+    const end = Math.min(start + framesPerYield, numFrames);
+    writeSamples(view, channels, start, end);
+    onProgress?.(end / numFrames);
+    if (end < numFrames) await new Promise<void>((r) => setTimeout(r, 0));
+  }
   return new Blob([buf], { type: 'audio/wav' });
 }
 

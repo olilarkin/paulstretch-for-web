@@ -171,6 +171,21 @@ body {
 .param-row .slider.grow { flex: 1; }
 .param-row .slider.onset { width: 180px; }
 .param-row .value-readout { font-family: 'JetBrains Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace; min-width: 40px; }
+
+/* Determinate render/encode progress bar (classic inset well + accent fill). */
+.render-progress {
+  flex: 1;
+  height: 14px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border);
+  border-top-color: var(--border-dark);
+  border-left-color: var(--border-dark);
+  background: var(--bg-input);
+}
+.render-progress::-webkit-progress-bar { background: var(--bg-input); }
+.render-progress::-webkit-progress-value { background: var(--accent); transition: width 0.1s linear; }
+.render-progress::-moz-progress-bar { background: var(--accent); }
 .envelope-title {
   margin-left: auto;
   font-weight: bold;

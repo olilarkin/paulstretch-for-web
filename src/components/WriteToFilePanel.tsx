@@ -15,7 +15,7 @@ import type {
   RenderWorkerToMain,
 } from '../audio/render/types';
 import {
-  encodeWavPcm16,
+  encodeWavPcm16Async,
   estimateWavPcm16Size,
   stretchedFilename,
   WAV_MAX_BYTES,
@@ -23,8 +23,8 @@ import {
 
 type RenderStatus =
   | { kind: 'idle' }
-  | { kind: 'rendering' }
-  | { kind: 'encoding' }
+  | { kind: 'rendering'; fraction: number }
+  | { kind: 'encoding'; fraction: number }
   | { kind: 'done'; filename: string }
   | { kind: 'error'; message: string };
 
@@ -137,13 +137,15 @@ export function WriteToFilePanel() {
     }
     const worker = workerRef.current;
 
-    setStatus({ kind: 'rendering' });
+    setStatus({ kind: 'rendering', fraction: 0 });
 
     const transfer = job.channels.map((c) => c.buffer);
     const result = await new Promise<RenderWorkerToMain>((resolve) => {
       const onMessage = (e: MessageEvent<RenderWorkerToMain>) => {
         const m = e.data;
-        if (m.type === 'rendered' && m.jobId === job.jobId) {
+        if (m.type === 'progress' && m.jobId === job.jobId) {
+          setStatus({ kind: 'rendering', fraction: m.fraction });
+        } else if (m.type === 'rendered' && m.jobId === job.jobId) {
           worker.removeEventListener('message', onMessage);
           resolve(m);
         } else if (m.type === 'error') {
@@ -162,9 +164,11 @@ export function WriteToFilePanel() {
     }
     if (result.type !== 'rendered') return;
 
-    setStatus({ kind: 'encoding' });
+    setStatus({ kind: 'encoding', fraction: 0 });
     try {
-      const blob = encodeWavPcm16(result.channels, result.sampleRate);
+      const blob = await encodeWavPcm16Async(result.channels, result.sampleRate, {
+        onProgress: (fraction) => setStatus({ kind: 'encoding', fraction }),
+      });
       const filename = stretchedFilename(source.name);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -244,12 +248,21 @@ export function WriteToFilePanel() {
             }
           />
           {status.kind === 'idle' && 'Idle'}
-          {status.kind === 'rendering' && 'Rendering…'}
-          {status.kind === 'encoding' && 'Encoding WAV…'}
+          {status.kind === 'rendering' && `Rendering… ${Math.round(status.fraction * 100)}%`}
+          {status.kind === 'encoding' && `Encoding WAV… ${Math.round(status.fraction * 100)}%`}
           {status.kind === 'done' && `Saved ${status.filename}`}
           {status.kind === 'error' && `Error: ${status.message}`}
         </span>
       </div>
+      {busy && (
+        <div className="param-row">
+          <progress
+            className="render-progress"
+            value={status.kind === 'rendering' || status.kind === 'encoding' ? status.fraction : 0}
+            max={1}
+          />
+        </div>
+      )}
       <div className="param-row sub">
         <span className="label small">
           Renders use the current Parameters / Process / Binaural beats settings. The page may
