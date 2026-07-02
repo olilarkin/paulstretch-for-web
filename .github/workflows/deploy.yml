@@ -24,10 +24,9 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        # @olilarkin/paulstretch-wasm is vendored (file: dependency), so no
+        # registry auth is needed.
         run: npm ci
-        env:
-          # Consumed by .npmrc to auth against npm.pkg.github.com for @olilarkin/paulstretch-wasm.
-          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Build
         run: npm run build
