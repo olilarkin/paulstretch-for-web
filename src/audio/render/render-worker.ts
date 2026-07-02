@@ -4,7 +4,8 @@ import PaulstretchModule, {
   type OfflineRenderer,
   type PaulstretchModule as PSModule,
 } from '@olilarkin/paulstretch-wasm';
-import wasmUrl from '@olilarkin/paulstretch-wasm/paulstretch.wasm?url';
+import { wasmUrl } from '../wasmSupport';
+import { describeWasmError } from '../wasmError';
 import type { BinauralStereoMode, WindowType } from '../../types';
 import type { RenderJob, RenderMainToWorker, RenderWorkerToMain } from './types';
 
@@ -141,7 +142,7 @@ async function handleRender(job: RenderJob): Promise<void> {
     post({
       type: 'error',
       jobId: job.jobId,
-      message: err instanceof Error ? err.message : String(err),
+      message: describeWasmError(err),
     });
   }
 }
@@ -160,7 +161,7 @@ async function handleMain(msg: RenderMainToWorker): Promise<void> {
   } catch (err) {
     post({
       type: 'error',
-      message: err instanceof Error ? err.message : String(err),
+      message: describeWasmError(err),
     });
   }
 }
