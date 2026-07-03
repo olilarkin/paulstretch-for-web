@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Paulstretch For Web</title>
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="icon" type="image/png" sizes="48x48" href="./favicon-48.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+    <!-- Web app manifest (name, icons, standalone display) -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#335577" />
+
+    <!-- iOS "Add to Home Screen": run standalone and label the icon "Paulstretch" -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Paulstretch" />
+
     <!-- GitHub Pages can't set COOP/COEP; this service worker re-serves
          responses with the headers SharedArrayBuffer requires. No-op when the
          page is already cross-origin-isolated (e.g. local dev). -->

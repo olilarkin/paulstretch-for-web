@@ -1,0 +1,34 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6d94ba"/>
+      <stop offset="1" stop-color="#2a4864"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.4" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbe8f2"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#sheen)"/>
+
+  <!-- Content scaled into the maskable safe zone (Android crops to a circle) -->
+  <g transform="translate(256 256) scale(0.72) translate(-256 -256)">
+    <rect x="52" y="252.5" width="408" height="7" rx="3.5" fill="#ffffff" opacity="0.18"/>
+    <g fill="url(#bar)">
+      <rect x="64"  y="220" width="12" height="72"  rx="6"/>
+      <rect x="88"  y="172" width="15" height="168" rx="7.5"/>
+      <rect x="118" y="106" width="18" height="300" rx="9"/>
+      <rect x="154" y="152" width="22" height="208" rx="11"/>
+      <rect x="198" y="86"  width="27" height="340" rx="12"/>
+      <rect x="252" y="190" width="33" height="132" rx="12"/>
+      <rect x="318" y="118" width="40" height="276" rx="12"/>
+      <rect x="398" y="160" width="48" height="192" rx="12"/>
+    </g>
+  </g>
+</svg>
