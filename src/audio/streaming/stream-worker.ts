@@ -99,16 +99,32 @@ const state = {
   pendingOffset: 0,
   pumpTimer: 0 as number | ReturnType<typeof setTimeout>,
   positionTimer: 0 as number | ReturnType<typeof setInterval>,
-  // Source/output frame counts captured at the last ring reset (stop, seek,
-  // source change). Used to derive the *consumer-side* source cursor — i.e.
-  // the source position the user is actually hearing, accounting for the
-  // SAB ring's buffered-ahead audio.
-  resetSourceBase: 0,
-  resetOutputBase: 0,
+  // Output→source mapping checkpoints, recorded once per produced block:
+  // cpOut[i] = ring WRITE_POS after the block, cpSrc[i] = cumulative source
+  // position (loopCount*total + cursor) at that point. The playhead maps the
+  // consumer's smooth READ_POS through these to get the exact source position
+  // being heard — independent of the producer's bursty writes and any
+  // stretch-ratio estimate. Pruned from the front as the consumer advances.
+  cpOut: [] as number[],
+  cpSrc: [] as number[],
   // Last cursor value reported to the UI. Frozen while paused so the
   // playhead doesn't drift as the worklet silently drains the ring tail.
   lastReportedCursor: 0,
 };
+
+function recordCheckpoint(): void {
+  if (!state.ring || !state.source) return;
+  const out = Atomics.load(state.ring.control, /* WRITE_POS */ 1);
+  const src = state.loopCount * state.source.totalFrames + state.cursor;
+  const n = state.cpOut.length;
+  // Coalesce if WRITE_POS didn't advance (a zero-length block).
+  if (n > 0 && state.cpOut[n - 1] === out) {
+    state.cpSrc[n - 1] = src;
+    return;
+  }
+  state.cpOut.push(out);
+  state.cpSrc.push(src);
+}
 
 function post(msg: WorkerToMain, transfer?: Transferable[]): void {
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer ?? []);
@@ -236,7 +252,10 @@ function flushPendingOutput(): boolean {
 // reached without looping.
 function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' | 'done' {
   if (!state.source || !state.stretchers.length || !state.ring) return 'done';
-  if (state.pendingOutputs && !flushPendingOutput()) return 'ringFull';
+  if (state.pendingOutputs) {
+    if (!flushPendingOutput()) return 'ringFull';
+    recordCheckpoint(); // the pending block is now fully in the ring
+  }
   const totalFrames = state.source.totalFrames;
   const channels = state.source.channels;
 
@@ -307,7 +326,11 @@ function produceOneBlock(stretchOutputs: Float32Array[]): 'wrote' | 'ringFull' |
 
   state.pendingOutputs = processBinaural(stretchOutputs, positionPct).slice();
   state.pendingOffset = 0;
-  return flushPendingOutput() ? 'wrote' : 'ringFull';
+  if (flushPendingOutput()) {
+    recordCheckpoint();
+    return 'wrote';
+  }
+  return 'ringFull';
 }
 
 function pumpLoop() {
@@ -341,40 +364,34 @@ function kickPumpSoon() {
   state.pumpTimer = setTimeout(pumpLoop, 0);
 }
 
-// Returns the source-frame position the user is currently hearing. The
-// worker's state.cursor is the *producer* position — it has already advanced
-// state.cursor by the time the corresponding output frames are written into
-// the ring. The consumer (worklet) drains those frames later, so what the
-// user hears trails behind by `(WRITE_POS - READ_POS)` output frames.
-//
-// We don't track the instantaneous stretch ratio explicitly; instead we
-// derive an average ratio from cumulative production stats since the last
-// ring reset (start / seek / stop). This is robust to envelope-driven
-// stretch changes since it always uses the current average up to "now".
+// Returns the source-frame position the user is currently hearing. The worker's
+// state.cursor is the *producer* position — the corresponding output is written
+// into the ring ahead of time and drained by the worklet later. Rather than
+// estimate that lead from an average stretch ratio (bursty, and wrong across
+// loop wraps), we map the consumer's READ_POS through the recorded output→source
+// checkpoints, so the playhead follows exactly what's audible.
 function computeConsumerSourceCursor(): number {
-  if (!state.ring || !state.source) return state.cursor;
-  const total = state.source.totalFrames;
-  const writePos = Atomics.load(state.ring.control, /* WRITE_POS */ 1);
-  const readPos  = Atomics.load(state.ring.control, /* READ_POS  */ 0);
-  // Cumulative source position across loop wraps — the producer's cursor
-  // rewinds to 0 each pass, but output/consumption counters keep climbing, so
-  // we count whole passes too.
-  const cumulativeSource = state.loopCount * total + state.cursor;
-  const outputsProduced = writePos - state.resetOutputBase;
-  const sourcesConsumed = cumulativeSource - state.resetSourceBase;
-  if (outputsProduced <= 256 || sourcesConsumed <= 0) {
-    // Not enough data yet — priming phase or just-after-reset. The ring's
-    // first ~256 output frames precede a stable ratio; reporting producer
-    // cursor for that brief window is more accurate than dividing by ~0.
-    return state.cursor % total;
+  const total = state.source?.totalFrames ?? 0;
+  if (!state.ring || !state.source || total <= 0) return state.cursor;
+  const readPos = Atomics.load(state.ring.control, /* READ_POS */ 0);
+  const outs = state.cpOut;
+  const srcs = state.cpSrc;
+  // Drop checkpoints the consumer has already passed, keeping the one that
+  // straddles READ_POS at index 0.
+  while (outs.length >= 2 && outs[1] <= readPos) {
+    outs.shift();
+    srcs.shift();
   }
-  const ringAheadOutputs = Math.max(0, writePos - readPos);
-  const outputsPerSource = outputsProduced / sourcesConsumed;
-  const sourceFramesAhead = ringAheadOutputs / outputsPerSource;
-  const heard = cumulativeSource - sourceFramesAhead;
-  // Source position is cyclic under looping — fold the cumulative "heard"
-  // position back into [0, total).
-  return ((heard % total) + total) % total;
+  if (outs.length < 2) return state.cursor % total;
+  // Linear interpolation between the two checkpoints bracketing READ_POS. This
+  // is monotonic and continuous (both READ_POS and the recorded source cursor
+  // only ever increase), so it never jitters backwards; the reporter low-passes
+  // it to smooth the stretcher's chunked input steps.
+  const span = outs[1] - outs[0];
+  const t = span > 0 ? Math.max(0, Math.min(1, (readPos - outs[0]) / span)) : 0;
+  const src = srcs[0] + t * (srcs[1] - srcs[0]);
+  // Source position is cyclic under looping — fold back into [0, total).
+  return ((src % total) + total) % total;
 }
 
 function startPositionReports() {
@@ -382,7 +399,17 @@ function startPositionReports() {
   state.positionTimer = setInterval(() => {
     if (!state.source) return;
     if (state.running) {
-      state.lastReportedCursor = computeConsumerSourceCursor();
+      const total = state.source.totalFrames;
+      const target = computeConsumerSourceCursor();
+      const prev = state.lastReportedCursor;
+      // Low-pass toward the raw (stair-stepped) position so the bar glides
+      // instead of stepping when the stretcher pulls input in chunks — but snap
+      // on a loop wrap, where the target legitimately drops from ~total to ~0.
+      if (total > 0 && prev - target > total * 0.5) {
+        state.lastReportedCursor = target;
+      } else {
+        state.lastReportedCursor = prev + 0.4 * (target - prev);
+      }
     }
     // While paused/stopped, hold the last cursor so the UI doesn't drift as
     // the worklet keeps consuming the buffered tail (which we've already
@@ -400,13 +427,17 @@ function startPositionReports() {
 // production/consumption stats is measured from a clean baseline. Must be
 // called whenever we ringReset (or otherwise discontinuously change cursor).
 function captureResetBases(): void {
-  // A hard reset (start / seek / stop / new source) clears the loop count, so
-  // the cumulative source position restarts from the current cursor.
+  // A hard reset (start / seek / stop / new source) discontinuously changes the
+  // cursor, so the old output→source checkpoints no longer apply. Clear them and
+  // seed a baseline at the current WRITE_POS so the playhead is anchored from the
+  // first block. loopCount restarts too.
   state.loopCount = 0;
-  state.resetSourceBase = state.cursor;
-  state.resetOutputBase = state.ring
-    ? Atomics.load(state.ring.control, /* WRITE_POS */ 1)
-    : 0;
+  state.cpOut.length = 0;
+  state.cpSrc.length = 0;
+  if (state.ring && state.source) {
+    state.cpOut.push(Atomics.load(state.ring.control, /* WRITE_POS */ 1));
+    state.cpSrc.push(state.cursor);
+  }
   state.lastReportedCursor = state.cursor;
 }
 
