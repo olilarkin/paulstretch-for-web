@@ -165,7 +165,7 @@ export const useStore = create<StoreState>((set) => ({
   playheadCursor: 0,
   playheadTotal: 0,
 
-  setSource: (s) => set({ source: s }),
+  setSource: (s) => set({ source: s, playheadCursor: 0, playheadTotal: 0 }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setEngineState: (s, error = null) => set({ engineState: s, engineError: error }),
   setPlayhead: (cursor, total) => set({ playheadCursor: cursor, playheadTotal: total }),

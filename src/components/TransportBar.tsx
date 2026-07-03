@@ -16,6 +16,13 @@ export function TransportBar({ engineRef }: Props) {
   const total = useStore((s) => s.playheadTotal);
   const [playing, setPlaying] = useState(false);
 
+  // Loading a new file stops playback (the worker resets to zero and a
+  // sample-rate change swaps in a fresh, idle engine). Reset the button state
+  // so Play is enabled again — otherwise it stays stuck showing "playing".
+  useEffect(() => {
+    setPlaying(false);
+  }, [source]);
+
   const frac = total > 0 ? cursor / total : 0;
   const stretch = sliderToStretch(params.mode, params.stretchSlider);
   const inputSec = source ? source.durationSec : 0;

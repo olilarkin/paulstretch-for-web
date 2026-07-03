@@ -425,6 +425,10 @@ async function handleMain(msg: MainToWorker) {
         sampleRate: msg.source.sampleRate,
       };
       state.cursor = 0;
+      // Loading a new source lands stopped-at-zero, not auto-continuing the
+      // previous playback. Keeps behaviour consistent whether or not the engine
+      // was rebuilt for a new sample rate, and matches the transport UI.
+      state.running = false;
       state.firstStep = true;
       clearPendingOutput();
       if (state.config) rebuildStretchers();

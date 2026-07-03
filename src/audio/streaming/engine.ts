@@ -163,6 +163,8 @@ export class StreamingEngine {
   }
 
   loadSource(source: AudioSource): void {
+    // The worker resets to a stopped state on a new source; mirror that here.
+    this.playing = false;
     const channels = source.channels.map((c) => new Float32Array(c));
     this.send(
       {
@@ -252,9 +254,28 @@ export class StreamingEngine {
 
   async play(): Promise<void> {
     if (this.ctx.state === 'suspended') await this.ctx.resume();
+    this.primeOutput();
     this.rampGainTo(1);
     this.send({ type: 'play' });
     this.playing = true;
+  }
+
+  // iOS Safari drops the first audio pushed through a freshly created/resumed
+  // AudioContext until a real buffer has driven the output route. Because the
+  // app builds a new context per source sample rate, the first play after
+  // loading a differently-sampled file (e.g. 48 kHz after 44.1 kHz) would
+  // otherwise be silent. Playing a one-frame silent buffer primes the route.
+  // Cheap and inaudible, so we do it on every play() — also re-arms the route
+  // after an iOS audio interruption (call, lock screen) suspends the context.
+  private primeOutput(): void {
+    try {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      src.connect(this.ctx.destination);
+      src.start();
+    } catch {
+      // Non-fatal: priming is a best-effort iOS workaround.
+    }
   }
 
   pause(): void {
