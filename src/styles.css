@@ -681,6 +681,66 @@ input[type="range"]::-moz-range-thumb {
   .arbitrary-box {
     flex: 0 0 auto;
   }
+
+  /* Parameters page: stack each control's label above its slider. The long
+     labels + Mode/Type selects can't shrink on a phone, so keeping them on the
+     same row as the slider forces horizontal scrolling. Wrapping the row and
+     letting the label take a full line above removes that pressure. */
+  .param-row {
+    flex-wrap: wrap;
+  }
+  .param-row .label {
+    flex-basis: 100%;
+    white-space: normal;
+  }
+  /* A range input's default flex min-width is its (wide) intrinsic size, so it
+     refuses to shrink and pushes the trailing select off-screen. Let it. */
+  .param-row .slider {
+    min-width: 0;
+  }
+  /* Onset slider grows to fill the row instead of a fixed 180px. */
+  .param-row .slider.onset {
+    width: auto;
+    flex: 1;
+  }
+  /* "Stretch Multiplier" heading sits on its own full-width line above the
+     graph rather than crowding (and overflowing) the onset row. */
+  .param-row .envelope-title {
+    flex-basis: 100%;
+    margin-left: 0;
+    margin-top: 2px;
+  }
+
+  /* The Stretch Multiplier BPF fills all remaining height on desktop; on a
+     phone that makes it a giant box. Cap it so the params above stay visible
+     and it takes less of the page. */
+  .envelope-wrap {
+    flex: 0 0 auto;
+  }
+  .envelope-container {
+    flex: none;
+    height: 280px;
+  }
+
+  /* The transport's readouts (time + status) have fixed min-widths and nowrap
+     text that together exceed a phone's width, forcing the whole app past the
+     viewport (the real cause of the horizontal scroll). Let the bar wrap so the
+     readouts drop to a second line, and allow them to shrink rather than push. */
+  .transport {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .transport .position-slider {
+    flex: 1 1 120px;
+    min-width: 0;
+  }
+  .transport .time-readout {
+    min-width: 0;
+  }
+  .transport .status {
+    min-width: 0;
+    margin-left: auto;
+  }
 }
 
 /* Transport */
