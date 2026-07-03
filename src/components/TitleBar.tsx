@@ -30,10 +30,13 @@ export function TitleBar({ onFile }: Props) {
         <input
           ref={fileInputRef}
           type="file"
-          // Listing extensions explicitly (not just `audio/*`) is what lets
-          // iOS Safari surface .wav/.aif files in the Files picker — with a
-          // bare `audio/*` it greys them out or only offers the Music library.
-          accept=".wav,.wave,.aif,.aiff,.aifc,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac,.webm,audio/*"
+          // Explicit extensions only — deliberately NO `audio/*` wildcard.
+          // On iOS the media wildcards (audio/*, image/*, video/*) route the
+          // picker through the Photos action sheet (offering "Photo Library" /
+          // camera), whereas a plain extension list opens the Files document
+          // browser directly. Extensions also let iOS surface .wav/.aif, which
+          // a bare `audio/*` greys out.
+          accept=".wav,.wave,.aif,.aiff,.aifc,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac"
           style={{ display: 'none' }}
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
