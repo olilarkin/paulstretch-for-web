@@ -1,5 +1,6 @@
 import type { AudioSource } from '../types';
 import { getAudioContext } from './playback';
+import { decodeWav } from './decodeWav';
 
 function ascii(view: DataView, offset: number, length: number): string {
   let s = '';
@@ -37,6 +38,18 @@ export async function loadAudioFile(
   arrayBuffer?: ArrayBuffer,
 ): Promise<AudioSource> {
   const audioData = arrayBuffer ?? await file.arrayBuffer();
+
+  // Prefer the dependency-free PCM path for uncompressed WAV: it decodes at the
+  // file's native rate and never touches the browser's decodeAudioData (its most
+  // fragile path on iOS). Only usable when the audio context is already at the
+  // file's rate, since the streaming engine plays source samples out 1:1 at the
+  // context rate with no resampling. Otherwise fall through to decodeAudioData,
+  // which resamples to the context rate.
+  const pcm = decodeWav(audioData, file.name);
+  if (pcm && pcm.channels.length > 0 && Math.abs(context.sampleRate - pcm.sampleRate) < 1) {
+    return pcm;
+  }
+
   const audioBuffer = await context.decodeAudioData(audioData.slice(0));
 
   const channels: Float32Array[] = [];
