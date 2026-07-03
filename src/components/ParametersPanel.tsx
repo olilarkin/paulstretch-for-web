@@ -50,7 +50,10 @@ export function ParametersPanel() {
         <span className="inline-control">
           <button className="small-button" title="Enter an exact stretch multiplier."
             onClick={() => {
-              const v = prompt('Stretch factor (raw multiplier):', stretch.toString());
+              // Seed with a rounded value so the prompt doesn't show a long
+              // float like 10.000000000000002 from the slider mapping.
+              const seed = Number(stretch.toPrecision(6)).toString();
+              const v = prompt('Stretch factor (raw multiplier):', seed);
               if (v == null) return;
               const num = parseFloat(v);
               if (!isFinite(num) || num <= 0) return;

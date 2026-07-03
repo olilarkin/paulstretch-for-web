@@ -76,6 +76,9 @@ body {
   background: linear-gradient(to bottom, #6080a0, #335577);
   color: white;
   padding: 4px 8px;
+  /* Clear the notch / status bar when launched standalone with viewport-fit=cover
+     (env insets are 0 in normal desktop/browser layout). */
+  padding-top: calc(4px + env(safe-area-inset-top));
   font-weight: bold;
 }
 .titlebar-title { font-size: 13px; }
@@ -748,6 +751,9 @@ input[type="range"]::-moz-range-thumb {
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
   padding: 6px 10px;
+  /* Keep the controls above the iPhone home indicator; the bar's background
+     still fills the inset area beneath them. Zero on desktop. */
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   gap: 10px;
