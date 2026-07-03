@@ -48,6 +48,10 @@ export function WriteToFilePanel() {
   const envelope = useStore((s) => s.envelope);
 
   const [status, setStatus] = useState<RenderStatus>({ kind: 'idle' });
+  // The last successfully rendered file, kept so the user can Download or Share
+  // it. `shareable` is whether the OS share sheet accepts this file (iOS Safari,
+  // Android Chrome) — checked once at render time.
+  const [rendered, setRendered] = useState<{ file: File; shareable: boolean } | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const jobIdRef = useRef(0);
 
@@ -137,6 +141,7 @@ export function WriteToFilePanel() {
     }
     const worker = workerRef.current;
 
+    setRendered(null);
     setStatus({ kind: 'rendering', fraction: 0 });
 
     const transfer = job.channels.map((c) => c.buffer);
@@ -170,16 +175,12 @@ export function WriteToFilePanel() {
         onProgress: (fraction) => setStatus({ kind: 'encoding', fraction }),
       });
       const filename = stretchedFilename(source.name);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // Revoke after the browser has consumed the URL. A microtask is too
-      // early in some browsers; a frame is plenty.
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const file = new File([blob], filename, { type: 'audio/wav' });
+      // navigator.share() needs its own user gesture, so we stash the result
+      // and let the Download / Share buttons act on it.
+      const shareable =
+        typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+      setRendered({ file, shareable });
       setStatus({ kind: 'done', filename });
     } catch (err) {
       setStatus({
@@ -188,6 +189,28 @@ export function WriteToFilePanel() {
       });
     }
   }, [source, buildJob, outBytes, tooLarge]);
+
+  const onDownload = useCallback((file: File) => {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Revoke after the browser has consumed the URL. A microtask is too early
+    // in some browsers; a second is plenty.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, []);
+
+  const onShare = useCallback(async (file: File) => {
+    try {
+      await navigator.share({ files: [file], title: file.name });
+    } catch (err) {
+      // AbortError just means the user dismissed the share sheet.
+      if ((err as Error)?.name !== 'AbortError') console.error('share failed', err);
+    }
+  }, []);
 
   const busy = status.kind === 'rendering' || status.kind === 'encoding';
 
@@ -230,9 +253,9 @@ export function WriteToFilePanel() {
           className="menu-button"
           disabled={!source || busy || tooLarge}
           onClick={onRender}
-          title={!source ? 'Load a source file first' : 'Render and download a WAV file'}
+          title={!source ? 'Load a source file first' : 'Render a WAV file'}
         >
-          {busy ? 'Rendering…' : 'Render & download'}
+          {busy ? 'Rendering…' : 'Render'}
         </button>
         <span className="status" style={{ minWidth: 200 }}>
           <span
@@ -250,7 +273,7 @@ export function WriteToFilePanel() {
           {status.kind === 'idle' && 'Idle'}
           {status.kind === 'rendering' && `Rendering… ${Math.round(status.fraction * 100)}%`}
           {status.kind === 'encoding' && `Encoding WAV… ${Math.round(status.fraction * 100)}%`}
-          {status.kind === 'done' && `Saved ${status.filename}`}
+          {status.kind === 'done' && `Ready: ${status.filename}`}
           {status.kind === 'error' && `Error: ${status.message}`}
         </span>
       </div>
@@ -261,6 +284,26 @@ export function WriteToFilePanel() {
             value={status.kind === 'rendering' || status.kind === 'encoding' ? status.fraction : 0}
             max={1}
           />
+        </div>
+      )}
+      {status.kind === 'done' && rendered && (
+        <div className="param-row">
+          <button
+            className="menu-button"
+            onClick={() => onDownload(rendered.file)}
+            title="Save the WAV file"
+          >
+            Download
+          </button>
+          {rendered.shareable && (
+            <button
+              className="menu-button"
+              onClick={() => onShare(rendered.file)}
+              title="Share the WAV via the system share sheet"
+            >
+              Share…
+            </button>
+          )}
         </div>
       )}
       <div className="param-row sub">
