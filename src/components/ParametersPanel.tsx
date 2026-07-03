@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../state/store';
 import {
   fftResolution,
@@ -12,6 +14,7 @@ import { EnvelopeEditor } from './EnvelopeEditor/EnvelopeEditor';
 
 const MODES: StretchMode[] = ['Stretch', 'HyperStretch', 'Shorten'];
 const WINDOWS: WindowType[] = ['Rectangular', 'Hamming', 'Hann', 'Blackman', 'BlackmanHarris'];
+const STRETCH_PRESETS = [1, 2, 4, 5, 10, 20, 100];
 
 export function ParametersPanel() {
   const source = useStore((s) => s.source);
@@ -22,11 +25,20 @@ export function ParametersPanel() {
   const setWindowType = useStore((s) => s.setWindowType);
   const setOnsetSensitivity = useStore((s) => s.setOnsetSensitivity);
 
+  const [stretchModalOpen, setStretchModalOpen] = useState(false);
+  const [customStretch, setCustomStretch] = useState('');
+
   const sr = source?.sampleRate ?? 44100;
   const dur = source?.durationSec ?? 0;
   const stretch = sliderToStretch(params.mode, params.stretchSlider);
   const fftSize = sliderToStreamingFftSize(params.windowSlider);
   const res = fftResolution(fftSize, sr);
+
+  const applyStretch = (value: number) => {
+    if (!isFinite(value) || value <= 0) return;
+    setStretchSlider(inverseStretch(params.mode, value));
+    setStretchModalOpen(false);
+  };
 
   return (
     <div className="parameters-panel">
@@ -48,17 +60,13 @@ export function ParametersPanel() {
           className="slider grow"
         />
         <span className="inline-control">
-          <button className="small-button" title="Enter an exact stretch multiplier."
+          <button className="small-button" title="Choose or enter a stretch factor."
             onClick={() => {
-              // Seed with a rounded value so the prompt doesn't show a long
-              // float like 10.000000000000002 from the slider mapping.
-              const seed = Number(stretch.toPrecision(6)).toString();
-              const v = prompt('Stretch factor (raw multiplier):', seed);
-              if (v == null) return;
-              const num = parseFloat(v);
-              if (!isFinite(num) || num <= 0) return;
-              const x = inverseStretch(params.mode, num);
-              setStretchSlider(x);
+              // Seed the custom field to match the displayed "Stretch: 10.00x"
+              // label — not the raw slider float (e.g. 10.0017) — so people
+              // never start from an ugly decimal.
+              setCustomStretch(formatStretchFactor(stretch).replace(/x$/, ''));
+              setStretchModalOpen(true);
             }}
           >
             S
@@ -136,6 +144,51 @@ export function ParametersPanel() {
         <span className="envelope-title">Stretch Multiplier</span>
       </div>
       <EnvelopeEditor />
+
+      {stretchModalOpen &&
+        createPortal(
+          <div className="modal-backdrop" onClick={() => setStretchModalOpen(false)}>
+            <div className="modal stretch-modal" onClick={(e) => e.stopPropagation()}>
+              <h2>Stretch factor</h2>
+              <div className="stretch-presets">
+                {STRETCH_PRESETS.map((v) => (
+                  <button
+                    key={v}
+                    className={'stretch-preset' + (Math.abs(stretch - v) <= v * 0.01 ? ' active' : '')}
+                    onClick={() => applyStretch(v)}
+                  >
+                    {v}×
+                  </button>
+                ))}
+              </div>
+              <label className="stretch-custom-label" htmlFor="custom-stretch">
+                Custom factor
+              </label>
+              <form
+                className="stretch-custom"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  applyStretch(parseFloat(customStretch));
+                }}
+              >
+                <input
+                  id="custom-stretch"
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min="0"
+                  value={customStretch}
+                  onChange={(e) => setCustomStretch(e.target.value)}
+                />
+                <button type="submit">Apply</button>
+              </form>
+              <button className="modal-cancel" onClick={() => setStretchModalOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

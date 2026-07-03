@@ -847,3 +847,45 @@ input[type="range"]::-moz-range-thumb {
   border: 1px solid var(--border);
   cursor: pointer;
 }
+
+/* Stretch factor picker */
+.stretch-modal { min-width: 260px; max-width: 340px; }
+.stretch-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+.stretch-preset {
+  margin-top: 0;
+  padding: 12px 0;
+  font-size: 15px;
+  font-weight: bold;
+  text-align: center;
+}
+.stretch-preset:hover { background: #e0e0e0; }
+.stretch-preset.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+.stretch-custom-label {
+  display: block;
+  margin-top: 12px;
+  font-weight: bold;
+  font-size: 11px;
+}
+.stretch-custom {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.stretch-custom input {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  padding: 8px;
+  border: 1px solid var(--border);
+}
+.stretch-custom button { margin-top: 0; padding: 8px 14px; }
+.modal-cancel { display: block; }
