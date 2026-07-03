@@ -101,6 +101,27 @@ body {
   font-size: 11px;
 }
 .file-info.empty { color: #666; font-style: italic; }
+/* Loaded filename stays on one line and scrolls if it's too long, rather than
+   wrapping and shoving the rest of the layout down. */
+.file-info-loaded {
+  white-space: nowrap;
+  overflow: hidden;
+}
+.file-info-text {
+  display: inline-block;
+  white-space: nowrap;
+}
+.file-info-text.marquee {
+  animation: file-info-marquee var(--marquee-duration, 8s) ease-in-out infinite alternate;
+}
+/* Hold at each end, then ping-pong — so the name is readable at rest. */
+@keyframes file-info-marquee {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--marquee-shift, 0)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-info-text.marquee { animation: none; }
+}
 
 /* Tabs */
 .tabs {
