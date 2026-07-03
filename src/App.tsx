@@ -203,6 +203,48 @@ export function App() {
     }
   }, [attachEngine, setEngineState, setSource]);
 
+  // OS-level "open with" / "share to" entry points. Both are no-ops on iOS
+  // Safari (neither the File Handling API nor Web Share Target is supported
+  // there), but work on Chromium desktop and Android Chrome respectively.
+  const launchHandledRef = useRef(false);
+  useEffect(() => {
+    if (launchHandledRef.current) return;
+    launchHandledRef.current = true;
+
+    // File Handling API (Chromium desktop): launched via the OS "Open with".
+    const lq = (window as unknown as { launchQueue?: { setConsumer: (cb: (p: { files?: FileSystemFileHandle[] }) => void) => void } }).launchQueue;
+    if (lq && typeof lq.setConsumer === 'function') {
+      lq.setConsumer(async (params) => {
+        const handle = params?.files?.[0];
+        if (!handle) return;
+        try {
+          await loadFileIntoEngine(await handle.getFile());
+        } catch { /* ignore */ }
+      });
+    }
+
+    // Web Share Target (Android): the service worker stashed the shared file in
+    // the Cache and redirected here with ?share-target=1. Pull it back out.
+    if (new URLSearchParams(window.location.search).has('share-target')) {
+      void (async () => {
+        try {
+          const cache = await caches.open('paulstretch-share');
+          const res = await cache.match('shared-file');
+          if (res) {
+            const blob = await res.blob();
+            const name = decodeURIComponent(res.headers.get('x-share-filename') || 'shared-audio');
+            const file = new File([blob], name, { type: res.headers.get('content-type') || blob.type });
+            await cache.delete('shared-file');
+            await loadFileIntoEngine(file);
+          }
+        } catch { /* ignore */ }
+        // Drop the flag so a refresh doesn't re-trigger the load.
+        window.history.replaceState(null, '', window.location.pathname);
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onDrop = async (ev: React.DragEvent) => {
     ev.preventDefault();
     setDragActive(false);

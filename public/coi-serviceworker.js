@@ -23,8 +23,34 @@ if (typeof window === 'undefined') {
     }
   });
 
+  // Web Share Target (Android PWAs): the manifest posts the shared file here.
+  // A static host can't process the POST, so the worker stashes the file in the
+  // Cache and redirects to the app, which reads it back out on load.
+  async function handleShareTarget(request) {
+    try {
+      const formData = await request.formData();
+      const file = formData.get('audio');
+      if (file && typeof file !== 'string') {
+        const headers = new Headers();
+        headers.set('content-type', file.type || 'application/octet-stream');
+        headers.set('x-share-filename', encodeURIComponent(file.name || 'shared-audio'));
+        const cache = await caches.open('paulstretch-share');
+        await cache.put('shared-file', new Response(file, { headers }));
+      }
+    } catch (e) {
+      console.error('[share-target]', e);
+    }
+    return Response.redirect(new URL('./?share-target=1', self.registration.scope).toString(), 303);
+  }
+
   self.addEventListener('fetch', (event) => {
     const r = event.request;
+
+    if (r.method === 'POST' && new URL(r.url).pathname.endsWith('/share-target')) {
+      event.respondWith(handleShareTarget(r));
+      return;
+    }
+
     if (r.cache === 'only-if-cached' && r.mode !== 'same-origin') return;
 
     const request = coepCredentialless && r.mode === 'no-cors'
