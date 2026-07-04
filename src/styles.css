@@ -666,6 +666,8 @@ input[type="range"]::-moz-range-thumb {
   }
   .tabs {
     overflow-x: auto;
+    overflow-y: hidden;
+    touch-action: pan-x;
   }
   .tab {
     flex: 0 0 auto;
